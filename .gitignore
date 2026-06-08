@@ -1,0 +1,16 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Python caching
+__pycache__/
+*.pyc
+
+# Local SQLite Database (Don't push raw DBs to GitHub!)
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment variables / API Keys
+.env
