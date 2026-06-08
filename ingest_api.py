@@ -40,7 +40,7 @@ DB_PATH   = "predictor.db"
 DATA_DIR  = Path("data")
 
 # Only load these two seasons — enough signal for the Poisson model
-TARGET_SEASONS = {2018, 2022}
+TARGET_SEASONS = set(range(1930,2023))
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +134,7 @@ def load_evangower(conn) -> tuple[int, int]:
         reader = csv.DictReader(f)
         for i, row in enumerate(reader):
             try:
-                season = int(str(row.get("Year", "")).strip())
+                season = int(str(row.get("year", "")).strip())
             except ValueError:
                 continue
 
@@ -142,19 +142,19 @@ def load_evangower(conn) -> tuple[int, int]:
                 continue
 
             try:
-                home_score = int(str(row.get("Home Team Goals", "")).strip())
-                away_score = int(str(row.get("Away Team Goals", "")).strip())
+                home_score = int(str(row.get("home_score", "")).strip())
+                away_score = int(str(row.get("away_score", "")).strip())
             except ValueError:
                 log.debug(f"Row {i}: bad score values — skipping")
                 continue
 
-            home_name = str(row.get("Home Team Name", "")).strip()
-            away_name = str(row.get("Away Team Name", "")).strip()
+            home_name = str(row.get("home_team", "")).strip()
+            away_name = str(row.get("away_team", "")).strip()
             if not home_name or not away_name:
                 continue
 
             # Parse date — format varies ("25 Jun 2018 - 15:00" or "25 Jun 2018")
-            raw_date = str(row.get("Datetime", "")).strip()
+            raw_date = str(row.get("date", "")).strip()
             utc_date = _parse_evangower_date(raw_date) or datetime(season, 6, 1)
 
             # Derive a stable match_id from season + row index
@@ -169,7 +169,7 @@ def load_evangower(conn) -> tuple[int, int]:
                 match_id       = match_id,
                 competition    = "WC",
                 season         = season,
-                stage          = str(row.get("Stage", "")).strip() or None,
+                stage          = str(row.get("stage", "")).strip() or None,
                 utc_date       = utc_date.isoformat(),
                 home_team_id   = _team_id(home_name),
                 home_team_name = home_name,
@@ -227,20 +227,23 @@ def load_swaptr(conn) -> tuple[int, int]:
     with open(path, encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for i, row in enumerate(reader):
-            score_raw = str(row.get("Score", "")).strip()
+            score_raw = str(row.get("score", "")).strip()
             home_score, away_score = _parse_swaptr_score(score_raw)
             if home_score is None:
                 log.debug(f"Row {i}: unparseable score '{score_raw}' — skipping")
                 continue
 
-            home_name = str(row.get("Home", "")).strip()
-            away_name = str(row.get("Away", "")).strip()
+            home_name = str(row.get("home_team", "")).strip()
+            away_name = str(row.get("away_team", "")).strip()
             if not home_name or not away_name:
                 continue
 
-            raw_date = str(row.get("Date", "")).strip()
-            raw_time = str(row.get("Time", "")).strip()
-            utc_date = _parse_swaptr_date(raw_date, raw_time) or datetime(2022, 11, 20)
+            raw_date = str(row.get("match_time", "")).strip()
+
+            try:
+                utc_date = datetime.strptime(raw_date, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                utc_date = datetime(2022, 11, 20)
 
             notes    = str(row.get("Notes", "")).strip().lower()
             extra_time = "aet" in notes or "extra" in notes
@@ -264,7 +267,7 @@ def load_swaptr(conn) -> tuple[int, int]:
                 extra_time     = int(extra_time),
                 penalties      = int(penalties),
                 neutral_venue  = 1,
-                venue          = str(row.get("Venue", "")).strip() or None,
+                venue          = str(row.get("venue", "")).strip() or None,
             )
 
             if insert_row(conn, db_row):
@@ -277,12 +280,18 @@ def load_swaptr(conn) -> tuple[int, int]:
 
 
 def _parse_swaptr_score(raw: str) -> tuple[int | None, int | None]:
-    """Handles '2–1', '2-1', '0–0 (aet)' etc."""
-    raw = raw.replace("\u2013", "-").replace("\u2014", "-")  # en/em dash → hyphen
-    raw = raw.split("(")[0].strip()                          # strip "(aet)" suffixes
+    raw = str(raw)
+
+    raw = raw.replace("â€“", "-")
+    raw = raw.replace("–", "-")
+    raw = raw.replace("—", "-")
+
+    raw = raw.split("(")[0].strip()
+
     parts = raw.split("-")
     if len(parts) != 2:
         return None, None
+
     try:
         return int(parts[0].strip()), int(parts[1].strip())
     except ValueError:
