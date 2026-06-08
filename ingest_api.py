@@ -1,667 +1,411 @@
 """
-ingest_api.py — World Cup Predictor
-====================================
-Fetches historical international match data and upcoming World Cup fixtures
-from Football-Data.org and persists them to a local SQLite database.
+ingest_csv.py — Historical World Cup data loader
+=================================================
+Loads WC 2018 and 2022 match results from Kaggle CSV files into the same
+historical_results SQLite table that math_engine.py reads from.
 
-Usage
------
-    # First time setup — pulls everything:
-    python ingest_api.py --mode full
+Run this ONCE after downloading the CSVs:
+    py ingest_csv.py
 
-    # Subsequent runs — only new fixtures:
-    python ingest_api.py --mode fixtures
+CSV sources (free Kaggle download):
+  WC 1930-2018: https://www.kaggle.com/datasets/evangower/fifa-world-cup
+  WC 2022:      https://www.kaggle.com/datasets/swaptr/fifa-world-cup-2022-match-data
 
-    # Refresh upcoming fixtures only:
-    python ingest_api.py --mode upcoming
-
-Setup
------
-1. Sign up free at https://www.football-data.org/
-2. Copy your API key from your account dashboard
-3. Set it as an environment variable:
-       export FOOTBALL_DATA_API_KEY="your_key_here"
-   Or pass it directly:
-       python ingest_api.py --api-key YOUR_KEY --mode full
-
-Free tier covers: World Cup (WC), European Championship (EC), and more.
-Rate limit: 10 requests/minute — this script respects that automatically.
+Place downloaded files in a data/ subfolder:
+    world-cup-predictor/
+        data/
+            WorldCupMatches.csv      ← evangower dataset (1930-2018)
+            Matches.csv              ← swaptr dataset (2022)
+        ingest_csv.py
+        ingest_api.py
+        predictor.db
 """
 
+import sqlite3
+import csv
 import os
 import sys
-import time
 import logging
-import sqlite3
-import argparse
-from datetime import datetime, timezone
-from typing import Optional
-
-import requests
-from sqlalchemy import (
-    create_engine, Column, Integer, String, Float,
-    DateTime, Boolean, UniqueConstraint, text
-)
-from sqlalchemy.orm import DeclarativeBase, Session
-
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
-BASE_URL = "https://api.football-data.org/v4"
-
-# Football-Data.org competition codes (free tier)
-COMPETITIONS = {
-    "WC":  "FIFA World Cup",
-    "EC":  "UEFA European Championship",
-    "CL":  "UEFA Champions League",       # bonus: useful for club form
-}
-
-# World Cup competition ID on football-data.org
-WORLD_CUP_ID = "WC"
-
-# Seasons to pull for historical model training (adjust as needed)
-HISTORICAL_SEASONS = [2018, 2022]
-
-# Upcoming competition season (current World Cup)
-UPCOMING_SEASON = 2026
-
-# Seconds to wait between API calls (free tier = 10 req/min → 6s safe interval)
-REQUEST_INTERVAL = 6.5
-
-DB_PATH = "predictor.db"
-
-# ---------------------------------------------------------------------------
-# Logging
-# ---------------------------------------------------------------------------
+from datetime import datetime
+from pathlib import Path
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-8s  %(message)s",
     datefmt="%H:%M:%S",
 )
-log = logging.getLogger("ingest")
+log = logging.getLogger("ingest_csv")
 
-# ---------------------------------------------------------------------------
-# Database schema
-# ---------------------------------------------------------------------------
+DB_PATH   = "predictor.db"
+DATA_DIR  = Path("data")
 
-class Base(DeclarativeBase):
-    pass
-
-
-class Team(Base):
-    """Lookup table for teams — populated automatically during ingestion."""
-    __tablename__ = "teams"
-
-    id          = Column(Integer, primary_key=True)   # football-data team id
-    name        = Column(String, nullable=False)
-    short_name  = Column(String)
-    tla         = Column(String)                       # 3-letter abbreviation
-    crest_url   = Column(String)
-    area        = Column(String)                       # country / continent
-    updated_at  = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-
-class HistoricalResult(Base):
-    """
-    One row per completed match used to calculate team attack/defense strength.
-    Only STATUS='FINISHED' matches are stored here.
-    """
-    __tablename__ = "historical_results"
-    __table_args__ = (
-        UniqueConstraint("match_id", name="uq_historical_match"),
-    )
-
-    id              = Column(Integer, primary_key=True, autoincrement=True)
-    match_id        = Column(Integer, nullable=False)          # football-data match id
-    competition     = Column(String, nullable=False)           # e.g. "WC"
-    season          = Column(Integer, nullable=False)          # e.g. 2022
-    stage           = Column(String)                           # e.g. "GROUP_STAGE"
-    matchday        = Column(Integer)
-    utc_date        = Column(DateTime, nullable=False)
-
-    home_team_id    = Column(Integer, nullable=False)
-    home_team_name  = Column(String, nullable=False)
-    away_team_id    = Column(Integer, nullable=False)
-    away_team_name  = Column(String, nullable=False)
-
-    home_score      = Column(Integer, nullable=False)
-    away_score      = Column(Integer, nullable=False)
-    winner          = Column(String)                           # "HOME_TEAM" | "AWAY_TEAM" | "DRAW"
-
-    # Extra context useful for weighting/filtering
-    extra_time      = Column(Boolean, default=False)
-    penalties       = Column(Boolean, default=False)
-    venue           = Column(String)
-    neutral_venue   = Column(Boolean, default=True)            # World Cup = always neutral
-
-    ingested_at     = Column(DateTime, default=datetime.utcnow)
-
-
-class UpcomingFixture(Base):
-    """
-    Future / scheduled matches for the current World Cup.
-    Re-fetched regularly so kickoff times and group assignments stay current.
-    """
-    __tablename__ = "upcoming_fixtures"
-    __table_args__ = (
-        UniqueConstraint("match_id", name="uq_upcoming_match"),
-    )
-
-    id              = Column(Integer, primary_key=True, autoincrement=True)
-    match_id        = Column(Integer, nullable=False)
-    competition     = Column(String, nullable=False)
-    season          = Column(Integer, nullable=False)
-    stage           = Column(String)
-    matchday        = Column(Integer)
-    utc_date        = Column(DateTime, nullable=False)
-
-    home_team_id    = Column(Integer)
-    home_team_name  = Column(String)
-    away_team_id    = Column(Integer)
-    away_team_name  = Column(String)
-
-    status          = Column(String)                           # "SCHEDULED" | "TIMED" | "POSTPONED"
-    group           = Column(String)                           # "Group A" etc.
-
-    ingested_at     = Column(DateTime, default=datetime.utcnow)
-    updated_at      = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-
-class IngestLog(Base):
-    """Simple audit trail — one row per ingest run."""
-    __tablename__ = "ingest_log"
-
-    id              = Column(Integer, primary_key=True, autoincrement=True)
-    run_at          = Column(DateTime, default=datetime.utcnow)
-    mode            = Column(String)
-    competition     = Column(String)
-    season          = Column(Integer)
-    rows_inserted   = Column(Integer, default=0)
-    rows_skipped    = Column(Integer, default=0)
-    status          = Column(String)                           # "OK" | "ERROR"
-    error_msg       = Column(String)
+# Only load these two seasons — enough signal for the Poisson model
+TARGET_SEASONS = {2018, 2022}
 
 
 # ---------------------------------------------------------------------------
-# API client
+# DB helpers
 # ---------------------------------------------------------------------------
 
-class FootballDataClient:
-    """Thin wrapper around football-data.org v4 REST API."""
+def get_conn():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-    def __init__(self, api_key: str):
-        self.session = requests.Session()
-        self.session.headers.update({
-            "X-Auth-Token": api_key,
-            "Accept": "application/json",
-        })
-        self._last_call: float = 0.0
 
-    def _get(self, endpoint: str, params: Optional[dict] = None) -> dict:
-        """
-        GET with automatic rate-limit throttling.
-        Raises on HTTP errors — caller decides how to handle them.
-        """
-        elapsed = time.monotonic() - self._last_call
-        if elapsed < REQUEST_INTERVAL:
-            wait = REQUEST_INTERVAL - elapsed
-            log.debug(f"Rate-limit pause: {wait:.1f}s")
-            time.sleep(wait)
-
-        url = f"{BASE_URL}/{endpoint.lstrip('/')}"
-        log.debug(f"GET {url}  params={params}")
-
-        resp = self.session.get(url, params=params, timeout=30)
-        self._last_call = time.monotonic()
-
-        if resp.status_code == 429:
-            retry_after = int(resp.headers.get("X-RequestCounter-Reset", 60))
-            log.warning(f"Rate limited — waiting {retry_after}s before retry")
-            time.sleep(retry_after)
-            return self._get(endpoint, params)
-
-        resp.raise_for_status()
-        return resp.json()
-
-    def get_competition_matches(
-        self,
-        competition: str,
-        season: int,
-        status: Optional[str] = None,
-    ) -> list[dict]:
-        """
-        Returns all matches for a competition/season.
-        status: "FINISHED" | "SCHEDULED" | "TIMED" | None (all)
-        """
-        params: dict = {"season": season}
-        if status:
-            params["status"] = status
-
-        data = self._get(f"competitions/{competition}/matches", params=params)
-        matches = data.get("matches", [])
-        log.info(
-            f"  → {competition} {season} [{status or 'ALL'}]: {len(matches)} matches returned"
+def ensure_table(conn):
+    """Create historical_results if it doesn't already exist (idempotent)."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS historical_results (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            match_id        INTEGER NOT NULL UNIQUE,
+            competition     TEXT    NOT NULL,
+            season          INTEGER NOT NULL,
+            stage           TEXT,
+            matchday        INTEGER,
+            utc_date        DATETIME NOT NULL,
+            home_team_id    INTEGER NOT NULL,
+            home_team_name  TEXT    NOT NULL,
+            away_team_id    INTEGER NOT NULL,
+            away_team_name  TEXT    NOT NULL,
+            home_score      INTEGER NOT NULL,
+            away_score      INTEGER NOT NULL,
+            winner          TEXT,
+            extra_time      INTEGER DEFAULT 0,
+            penalties       INTEGER DEFAULT 0,
+            venue           TEXT,
+            neutral_venue   INTEGER DEFAULT 1,
+            ingested_at     DATETIME DEFAULT CURRENT_TIMESTAMP
         )
-        return matches
-
-    def get_competition_teams(self, competition: str, season: int) -> list[dict]:
-        """Returns team list for a competition/season."""
-        data = self._get(
-            f"competitions/{competition}/teams",
-            params={"season": season},
-        )
-        teams = data.get("teams", [])
-        log.info(f"  → {competition} {season}: {len(teams)} teams returned")
-        return teams
+    """)
+    conn.commit()
 
 
-# ---------------------------------------------------------------------------
-# Parsing helpers
-# ---------------------------------------------------------------------------
-
-def _parse_datetime(raw: Optional[str]) -> Optional[datetime]:
-    if not raw:
-        return None
-    # API returns ISO-8601 with Z suffix
-    raw = raw.replace("Z", "+00:00")
+def insert_row(conn, row: dict) -> bool:
+    """Insert one match. Returns True if inserted, False if duplicate."""
     try:
-        return datetime.fromisoformat(raw).replace(tzinfo=None)  # store as naive UTC
-    except ValueError:
-        return None
+        conn.execute("""
+            INSERT INTO historical_results
+                (match_id, competition, season, stage, utc_date,
+                 home_team_id, home_team_name, away_team_id, away_team_name,
+                 home_score, away_score, winner,
+                 extra_time, penalties, neutral_venue, venue)
+            VALUES
+                (:match_id, :competition, :season, :stage, :utc_date,
+                 :home_team_id, :home_team_name, :away_team_id, :away_team_name,
+                 :home_score, :away_score, :winner,
+                 :extra_time, :penalties, :neutral_venue, :venue)
+        """, row)
+        return True
+    except sqlite3.IntegrityError:
+        return False   # duplicate match_id — already loaded
 
 
-def _parse_team(raw: Optional[dict]) -> tuple[Optional[int], Optional[str]]:
-    if not raw:
-        return None, None
-    return raw.get("id"), raw.get("name") or raw.get("shortName")
-
-
-def _parse_score(raw: Optional[dict]) -> tuple[Optional[int], Optional[int]]:
-    """Extract fulltime score. Returns (None, None) if match not finished."""
-    if not raw:
-        return None, None
-    ft = raw.get("fullTime") or {}
-    return ft.get("home"), ft.get("away")
-
-
-def _went_to_extra(raw: Optional[dict]) -> bool:
-    if not raw:
-        return False
-    et = raw.get("extraTime") or {}
-    return et.get("home") is not None
-
-
-def _went_to_pens(raw: Optional[dict]) -> bool:
-    if not raw:
-        return False
-    pen = raw.get("penalties") or {}
-    return pen.get("home") is not None
+def _winner(home: int, away: int) -> str:
+    if home > away:
+        return "HOME_TEAM"
+    if away > home:
+        return "AWAY_TEAM"
+    return "DRAW"
 
 
 # ---------------------------------------------------------------------------
-# Upsert helpers
+# Parser: evangower WorldCupMatches.csv  (covers 1930–2018)
 # ---------------------------------------------------------------------------
 
-def upsert_team(session: Session, raw: dict) -> None:
-    team_id = raw.get("id")
-    if not team_id:
-        return
-    existing = session.get(Team, team_id)
-    if existing:
-        existing.name       = raw.get("name", existing.name)
-        existing.short_name = raw.get("shortName", existing.short_name)
-        existing.tla        = raw.get("tla", existing.tla)
-        existing.crest_url  = raw.get("crest", existing.crest_url)
-        existing.area       = (raw.get("area") or {}).get("name", existing.area)
-    else:
-        session.add(Team(
-            id          = team_id,
-            name        = raw.get("name"),
-            short_name  = raw.get("shortName"),
-            tla         = raw.get("tla"),
-            crest_url   = raw.get("crest"),
-            area        = (raw.get("area") or {}).get("name"),
-        ))
-
-
-def insert_historical(
-    session: Session,
-    match: dict,
-    competition: str,
-    season: int,
-) -> tuple[bool, bool]:
+def load_evangower(conn) -> tuple[int, int]:
     """
-    Returns (inserted: bool, skipped: bool).
-    Skips non-FINISHED matches and duplicates.
+    Expected columns (evangower dataset):
+        Year, Datetime, Stage, Stadium, City,
+        Home Team Name, Home Team Goals,
+        Away Team Goals, Away Team Name,
+        Win conditions, Attendance, ...
+
+    Returns (inserted, skipped).
     """
-    if match.get("status") != "FINISHED":
-        return False, True
+    path = DATA_DIR / "WorldCupMatches.csv"
+    if not path.exists():
+        log.warning(f"Not found: {path} — skipping evangower dataset")
+        return 0, 0
 
-    match_id = match["id"]
-    if session.execute(
-        text("SELECT 1 FROM historical_results WHERE match_id = :mid"),
-        {"mid": match_id},
-    ).fetchone():
-        return False, True   # already exists
-
-    home_id, home_name = _parse_team(match.get("homeTeam"))
-    away_id, away_name = _parse_team(match.get("awayTeam"))
-    home_score, away_score = _parse_score(match.get("score"))
-
-    if home_score is None or away_score is None:
-        log.warning(f"  ⚠ Match {match_id} has FINISHED status but no score — skipping")
-        return False, True
-
-    score_raw = match.get("score") or {}
-    winner_raw = score_raw.get("winner")
-
-    session.add(HistoricalResult(
-        match_id        = match_id,
-        competition     = competition,
-        season          = season,
-        stage           = match.get("stage"),
-        matchday        = match.get("matchday"),
-        utc_date        = _parse_datetime(match.get("utcDate")),
-        home_team_id    = home_id,
-        home_team_name  = home_name,
-        away_team_id    = away_id,
-        away_team_name  = away_name,
-        home_score      = home_score,
-        away_score      = away_score,
-        winner          = winner_raw,
-        extra_time      = _went_to_extra(score_raw),
-        penalties       = _went_to_pens(score_raw),
-        venue           = (match.get("venue") or "").strip() or None,
-        neutral_venue   = True,
-    ))
-    return True, False
-
-
-def upsert_upcoming(
-    session: Session,
-    match: dict,
-    competition: str,
-    season: int,
-) -> tuple[bool, bool]:
-    """
-    Upserts a scheduled/timed match into upcoming_fixtures.
-    Returns (upserted: bool, skipped: bool).
-    """
-    status = match.get("status", "")
-    if status == "FINISHED":
-        # Finished matches belong in historical_results, not upcoming
-        return False, True
-
-    match_id = match["id"]
-    home_id, home_name = _parse_team(match.get("homeTeam"))
-    away_id, away_name = _parse_team(match.get("awayTeam"))
-
-    existing = session.execute(
-        text("SELECT id FROM upcoming_fixtures WHERE match_id = :mid"),
-        {"mid": match_id},
-    ).fetchone()
-
-    if existing:
-        session.execute(
-            text("""
-                UPDATE upcoming_fixtures
-                SET home_team_id   = :htid,
-                    home_team_name = :htn,
-                    away_team_id   = :atid,
-                    away_team_name = :atn,
-                    status         = :status,
-                    utc_date       = :utc_date,
-                    stage          = :stage,
-                    matchday       = :matchday,
-                    "group"        = :grp,
-                    updated_at     = :now
-                WHERE match_id = :mid
-            """),
-            {
-                "htid":     home_id,
-                "htn":      home_name,
-                "atid":     away_id,
-                "atn":      away_name,
-                "status":   status,
-                "utc_date": _parse_datetime(match.get("utcDate")),
-                "stage":    match.get("stage"),
-                "matchday": match.get("matchday"),
-                "grp":      match.get("group"),
-                "now":      datetime.utcnow(),
-                "mid":      match_id,
-            },
-        )
-        return True, False
-
-    session.add(UpcomingFixture(
-        match_id        = match_id,
-        competition     = competition,
-        season          = season,
-        stage           = match.get("stage"),
-        matchday        = match.get("matchday"),
-        utc_date        = _parse_datetime(match.get("utcDate")),
-        home_team_id    = home_id,
-        home_team_name  = home_name,
-        away_team_id    = away_id,
-        away_team_name  = away_name,
-        status          = status,
-        group           = match.get("group"),
-    ))
-    return True, False
-
-
-# ---------------------------------------------------------------------------
-# Ingest modes
-# ---------------------------------------------------------------------------
-
-def ingest_historical(client: FootballDataClient, session: Session) -> None:
-    """Pull FINISHED World Cup matches for all HISTORICAL_SEASONS."""
-    log.info("=== Historical ingestion ===")
-    for season in HISTORICAL_SEASONS:
-        log.info(f"Fetching WC {season} finished matches …")
-        inserted = skipped = 0
-        try:
-            matches = client.get_competition_matches(WORLD_CUP_ID, season, status="FINISHED")
-            for m in matches:
-                ins, skip = insert_historical(session, m, WORLD_CUP_ID, season)
-                inserted += ins
-                skipped  += skip
-            session.commit()
-            log.info(f"  WC {season}: {inserted} inserted, {skipped} skipped")
-            _log_run(session, "historical", WORLD_CUP_ID, season, inserted, skipped, "OK")
-        except requests.HTTPError as e:
-            session.rollback()
-            msg = str(e)
-            log.error(f"  HTTP error for WC {season}: {msg}")
-            _log_run(session, "historical", WORLD_CUP_ID, season, 0, 0, "ERROR", msg)
-
-
-def ingest_upcoming(client: FootballDataClient, session: Session) -> None:
-    """Pull SCHEDULED / TIMED fixtures for the current World Cup season."""
-    log.info("=== Upcoming fixtures ingestion ===")
-    log.info(f"Fetching WC {UPCOMING_SEASON} scheduled fixtures …")
     inserted = skipped = 0
+
+    with open(path, encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        for i, row in enumerate(reader):
+            try:
+                season = int(str(row.get("Year", "")).strip())
+            except ValueError:
+                continue
+
+            if season not in TARGET_SEASONS:
+                continue
+
+            try:
+                home_score = int(str(row.get("Home Team Goals", "")).strip())
+                away_score = int(str(row.get("Away Team Goals", "")).strip())
+            except ValueError:
+                log.debug(f"Row {i}: bad score values — skipping")
+                continue
+
+            home_name = str(row.get("Home Team Name", "")).strip()
+            away_name = str(row.get("Away Team Name", "")).strip()
+            if not home_name or not away_name:
+                continue
+
+            # Parse date — format varies ("25 Jun 2018 - 15:00" or "25 Jun 2018")
+            raw_date = str(row.get("Datetime", "")).strip()
+            utc_date = _parse_evangower_date(raw_date) or datetime(season, 6, 1)
+
+            # Derive a stable match_id from season + row index
+            # (evangower has no native ID column)
+            match_id = int(f"18{season % 100:02d}{i:04d}")
+
+            win_cond = str(row.get("Win conditions", "")).strip().lower()
+            extra_time = "extra" in win_cond or "aet" in win_cond
+            penalties  = "pen" in win_cond or "pso" in win_cond
+
+            db_row = dict(
+                match_id       = match_id,
+                competition    = "WC",
+                season         = season,
+                stage          = str(row.get("Stage", "")).strip() or None,
+                utc_date       = utc_date.isoformat(),
+                home_team_id   = _team_id(home_name),
+                home_team_name = home_name,
+                away_team_id   = _team_id(away_name),
+                away_team_name = away_name,
+                home_score     = home_score,
+                away_score     = away_score,
+                winner         = _winner(home_score, away_score),
+                extra_time     = int(extra_time),
+                penalties      = int(penalties),
+                neutral_venue  = 1,
+                venue          = str(row.get("Stadium", "")).strip() or None,
+            )
+
+            if insert_row(conn, db_row):
+                inserted += 1
+            else:
+                skipped += 1
+
+    conn.commit()
+    return inserted, skipped
+
+
+def _parse_evangower_date(raw: str) -> datetime | None:
+    for fmt in ("%d %b %Y - %H:%M", "%d %b %Y", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(raw.strip(), fmt)
+        except ValueError:
+            continue
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Parser: swaptr Matches.csv  (covers WC 2022)
+# ---------------------------------------------------------------------------
+
+def load_swaptr(conn) -> tuple[int, int]:
+    """
+    Expected columns (swaptr dataset — FBref sourced):
+        Wk, Day, Date, Time, Home, Score, Away, Attend, Venue,
+        Referee, Match Report, Notes
+
+    Score is formatted as "X–Y" or "X-Y" (full-time result).
+
+    Returns (inserted, skipped).
+    """
+    path = DATA_DIR / "Matches.csv"
+    if not path.exists():
+        log.warning(f"Not found: {path} — skipping swaptr 2022 dataset")
+        log.warning("  Download from: https://www.kaggle.com/datasets/swaptr/fifa-world-cup-2022-match-data")
+        return 0, 0
+
+    inserted = skipped = 0
+
+    with open(path, encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        for i, row in enumerate(reader):
+            score_raw = str(row.get("Score", "")).strip()
+            home_score, away_score = _parse_swaptr_score(score_raw)
+            if home_score is None:
+                log.debug(f"Row {i}: unparseable score '{score_raw}' — skipping")
+                continue
+
+            home_name = str(row.get("Home", "")).strip()
+            away_name = str(row.get("Away", "")).strip()
+            if not home_name or not away_name:
+                continue
+
+            raw_date = str(row.get("Date", "")).strip()
+            raw_time = str(row.get("Time", "")).strip()
+            utc_date = _parse_swaptr_date(raw_date, raw_time) or datetime(2022, 11, 20)
+
+            notes    = str(row.get("Notes", "")).strip().lower()
+            extra_time = "aet" in notes or "extra" in notes
+            penalties  = "pen" in notes or "pso" in notes
+
+            match_id = int(f"2022{i:04d}")
+
+            db_row = dict(
+                match_id       = match_id,
+                competition    = "WC",
+                season         = 2022,
+                stage          = _infer_stage_2022(row),
+                utc_date       = utc_date.isoformat(),
+                home_team_id   = _team_id(home_name),
+                home_team_name = home_name,
+                away_team_id   = _team_id(away_name),
+                away_team_name = away_name,
+                home_score     = home_score,
+                away_score     = away_score,
+                winner         = _winner(home_score, away_score),
+                extra_time     = int(extra_time),
+                penalties      = int(penalties),
+                neutral_venue  = 1,
+                venue          = str(row.get("Venue", "")).strip() or None,
+            )
+
+            if insert_row(conn, db_row):
+                inserted += 1
+            else:
+                skipped += 1
+
+    conn.commit()
+    return inserted, skipped
+
+
+def _parse_swaptr_score(raw: str) -> tuple[int | None, int | None]:
+    """Handles '2–1', '2-1', '0–0 (aet)' etc."""
+    raw = raw.replace("\u2013", "-").replace("\u2014", "-")  # en/em dash → hyphen
+    raw = raw.split("(")[0].strip()                          # strip "(aet)" suffixes
+    parts = raw.split("-")
+    if len(parts) != 2:
+        return None, None
     try:
-        matches = client.get_competition_matches(WORLD_CUP_ID, UPCOMING_SEASON)
-        for m in matches:
-            ins, skip = upsert_upcoming(session, m, WORLD_CUP_ID, UPCOMING_SEASON)
-            inserted += ins
-            skipped  += skip
-        session.commit()
-        log.info(f"  WC {UPCOMING_SEASON}: {inserted} upserted, {skipped} skipped")
-        _log_run(session, "upcoming", WORLD_CUP_ID, UPCOMING_SEASON, inserted, skipped, "OK")
-    except requests.HTTPError as e:
-        session.rollback()
-        msg = str(e)
-        log.error(f"  HTTP error for WC {UPCOMING_SEASON}: {msg}")
-        _log_run(session, "upcoming", WORLD_CUP_ID, UPCOMING_SEASON, 0, 0, "ERROR", msg)
+        return int(parts[0].strip()), int(parts[1].strip())
+    except ValueError:
+        return None, None
 
 
-def ingest_teams(client: FootballDataClient, session: Session) -> None:
-    """Populate/refresh the teams lookup table."""
-    log.info("=== Teams ingestion ===")
-    for season in HISTORICAL_SEASONS + [UPCOMING_SEASON]:
+def _parse_swaptr_date(date_str: str, time_str: str) -> datetime | None:
+    combined = f"{date_str} {time_str}".strip()
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d", "%d/%m/%Y %H:%M", "%d/%m/%Y"):
         try:
-            teams = client.get_competition_teams(WORLD_CUP_ID, season)
-            for t in teams:
-                upsert_team(session, t)
-            session.commit()
-            log.info(f"  Teams for WC {season}: {len(teams)} upserted")
-        except requests.HTTPError as e:
-            session.rollback()
-            log.error(f"  Could not fetch teams for WC {season}: {e}")
+            return datetime.strptime(combined, fmt)
+        except ValueError:
+            continue
+    return None
 
 
-def _log_run(
-    session: Session,
-    mode: str,
-    competition: str,
-    season: int,
-    inserted: int,
-    skipped: int,
-    status: str,
-    error_msg: Optional[str] = None,
-) -> None:
-    session.add(IngestLog(
-        mode          = mode,
-        competition   = competition,
-        season        = season,
-        rows_inserted = inserted,
-        rows_skipped  = skipped,
-        status        = status,
-        error_msg     = error_msg,
-    ))
-    session.commit()
+def _infer_stage_2022(row: dict) -> str:
+    """Best-effort stage label from Wk or Round column if present."""
+    wk = str(row.get("Wk", row.get("Round", ""))).strip()
+    if not wk:
+        return "GROUP_STAGE"
+    wk_lower = wk.lower()
+    if "group" in wk_lower or wk.isdigit():
+        return "GROUP_STAGE"
+    if "round of 16" in wk_lower or "r16" in wk_lower:
+        return "LAST_16"
+    if "quarter" in wk_lower:
+        return "QUARTER_FINALS"
+    if "semi" in wk_lower:
+        return "SEMI_FINALS"
+    if "final" in wk_lower:
+        return "FINAL"
+    return wk.upper().replace(" ", "_")
 
 
 # ---------------------------------------------------------------------------
-# Database initialisation
+# Utility: deterministic team_id from name
+# (keeps foreign-key relationships consistent without hitting the API)
 # ---------------------------------------------------------------------------
 
-def init_db(db_path: str):
-    """Create all tables if they don't exist and return engine + session."""
-    engine = create_engine(f"sqlite:///{db_path}", echo=False)
-    Base.metadata.create_all(engine)
-    log.info(f"Database ready: {db_path}")
-    return engine
+def _team_id(name: str) -> int:
+    """
+    Generates a stable integer ID from a team name using a simple hash.
+    Consistent within a run — the math engine only needs the name anyway.
+    """
+    return abs(hash(name.lower().strip())) % 900_000 + 100_000
 
 
 # ---------------------------------------------------------------------------
-# Verification helper — prints row counts after ingestion
+# Summary
 # ---------------------------------------------------------------------------
 
-def print_summary(db_path: str) -> None:
-    conn = sqlite3.connect(db_path)
-    cur  = conn.cursor()
-    print("\n" + "─" * 52)
-    print(f"{'Table':<30} {'Rows':>8}")
-    print("─" * 52)
-    for table in ["teams", "historical_results", "upcoming_fixtures", "ingest_log"]:
-        try:
-            count = cur.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-            print(f"  {table:<28} {count:>8,}")
-        except sqlite3.OperationalError:
-            print(f"  {table:<28} {'(missing)':>8}")
-    print("─" * 52)
-
-    print("\nSample historical results:")
-    rows = cur.execute("""
-        SELECT home_team_name, away_team_name, home_score, away_score, season
+def print_summary(conn):
+    print("\n" + "─" * 56)
+    print(f"  {'Season':<10} {'Matches':>8}  {'Avg goals':>10}")
+    print("─" * 56)
+    rows = conn.execute("""
+        SELECT season,
+               COUNT(*)                            AS matches,
+               ROUND(AVG(home_score + away_score), 2) AS avg_goals
         FROM   historical_results
-        ORDER  BY utc_date DESC
-        LIMIT  5
+        WHERE  competition = 'WC'
+        GROUP  BY season
+        ORDER  BY season
     """).fetchall()
     for r in rows:
-        print(f"  {r[0]:<22} {r[2]}–{r[3]}  {r[1]:<22}  (WC {r[4]})")
+        print(f"  WC {r['season']:<6}  {r['matches']:>8}  {r['avg_goals']:>10}")
+    total = conn.execute("SELECT COUNT(*) FROM historical_results").fetchone()[0]
+    print("─" * 56)
+    print(f"  {'TOTAL':<10} {total:>8}")
+    print()
 
-    print("\nSample upcoming fixtures:")
-    rows = cur.execute("""
-        SELECT home_team_name, away_team_name, utc_date, stage
-        FROM   upcoming_fixtures
-        ORDER  BY utc_date
+    print("  Sample rows:")
+    samples = conn.execute("""
+        SELECT home_team_name, home_score, away_score, away_team_name, season
+        FROM   historical_results
+        ORDER  BY RANDOM()
         LIMIT  5
     """).fetchall()
-    for r in rows:
-        print(f"  {r[0]:<22} vs {r[1]:<22}  {r[2]}  [{r[3]}]")
-
-    conn.close()
+    for r in samples:
+        print(f"    {r['home_team_name']:<22} {r['home_score']}–{r['away_score']}  "
+              f"{r['away_team_name']:<22}  (WC {r['season']})")
+    print()
 
 
 # ---------------------------------------------------------------------------
-# CLI entry point
+# Entry point
 # ---------------------------------------------------------------------------
-
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Ingest World Cup data from Football-Data.org into SQLite"
-    )
-    parser.add_argument(
-        "--mode",
-        choices=["full", "historical", "upcoming", "fixtures"],
-        default="full",
-        help=(
-            "full     = teams + historical + upcoming  (first run)\n"
-            "historical = historical results only\n"
-            "upcoming / fixtures = upcoming fixtures only"
-        ),
-    )
-    parser.add_argument(
-        "--api-key",
-        default=os.getenv("FOOTBALL_DATA_API_KEY"),
-        help="Football-Data.org API key (or set FOOTBALL_DATA_API_KEY env var)",
-    )
-    parser.add_argument(
-        "--db",
-        default=DB_PATH,
-        help=f"Path to SQLite database file (default: {DB_PATH})",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable verbose debug logging",
-    )
-    return parser.parse_args()
-
 
 def main():
-    args = parse_args()
-
-    if args.debug:
-        logging.getLogger().setLevel(logging.DEBUG)
-
-    if not args.api_key:
-        print(
-            "ERROR: No API key found.\n"
-            "  Set the FOOTBALL_DATA_API_KEY environment variable, or pass --api-key.\n"
-            "  Sign up free at https://www.football-data.org/",
-            file=sys.stderr,
+    if not Path(DB_PATH).exists():
+        log.error(
+            f"Database '{DB_PATH}' not found.\n"
+            "  Run 'py ingest_api.py --mode upcoming' first to create it,\n"
+            "  or this script will create a fresh DB automatically."
         )
-        sys.exit(1)
 
-    # Initialise DB
-    engine = init_db(args.db)
-    client = FootballDataClient(args.api_key)
+    conn = get_conn()
+    ensure_table(conn)
 
-    with Session(engine) as session:
-        mode = args.mode
-        log.info(f"Starting ingest — mode={mode}")
+    log.info("Loading WC 2018 data (evangower / WorldCupMatches.csv) …")
+    ins18, skip18 = load_evangower(conn)
+    log.info(f"  WC 2018: {ins18} inserted, {skip18} skipped")
 
-        if mode == "full":
-            ingest_teams(client, session)
-            ingest_historical(client, session)
-            ingest_upcoming(client, session)
+    log.info("Loading WC 2022 data (swaptr / Matches.csv) …")
+    ins22, skip22 = load_swaptr(conn)
+    log.info(f"  WC 2022: {ins22} inserted, {skip22} skipped")
 
-        elif mode == "historical":
-            ingest_teams(client, session)
-            ingest_historical(client, session)
+    total = ins18 + ins22
+    if total == 0:
+        log.warning(
+            "\n  No rows inserted. Make sure your CSVs are in the data/ folder:\n"
+            "    data/WorldCupMatches.csv  (evangower — 1930-2018 WC matches)\n"
+            "    data/Matches.csv          (swaptr — 2022 WC matches)\n"
+            "\n  Download links:\n"
+            "    https://www.kaggle.com/datasets/evangower/fifa-world-cup\n"
+            "    https://www.kaggle.com/datasets/swaptr/fifa-world-cup-2022-match-data"
+        )
+    else:
+        log.info(f"Done — {total} total rows inserted into historical_results")
+        print_summary(conn)
 
-        elif mode in ("upcoming", "fixtures"):
-            ingest_upcoming(client, session)
-
-    print_summary(args.db)
-    log.info("Done.")
+    conn.close()
 
 
 if __name__ == "__main__":
