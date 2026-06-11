@@ -8,7 +8,6 @@ __pycache__/
 *.pyc
 
 # Local SQLite Database (Don't push raw DBs to GitHub!)
-*.db
 *.sqlite
 *.sqlite3
 
