@@ -4,7 +4,7 @@ A match probability engine for the 2026 FIFA World Cup, built entirely in Python
 
 **[Live app →](https://world-cup-predictor-wjww6fmrzy7nzefe8epety.streamlit.app)**
 
-![App screenshot](docs/screenshot.png)
+![App screenshot](docs/screenshots/dashboard.png.png)
 
 ---
 
