@@ -1,10 +1,14 @@
 # World Cup 2026 Predictor ⚽
+![Python](https://img.shields.io/badge/Python-3.13-blue)
+![Streamlit](https://img.shields.io/badge/Streamlit-Live-red)
+![SQLite](https://img.shields.io/badge/SQLite-Database-green)
+![License](https://img.shields.io/badge/License-MIT-yellow)
 
 A match probability engine for the 2026 FIFA World Cup, built entirely in Python. It uses a Poisson distribution model trained on 92 years of World Cup history (1930–2022) to generate win/draw/loss probabilities, expected goals, and exact scoreline likelihoods for every fixture in the tournament.
 
 **[Live app →](https://world-cup-predictor-wjww6fmrzy7nzefe8epety.streamlit.app)**
 
-![App screenshot](docs/screenshot.png)
+![App screenshot](docs/screenshots/dashboard.png.png)
 
 ---
 
