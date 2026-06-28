@@ -3,6 +3,7 @@
 ![Streamlit](https://img.shields.io/badge/Streamlit-Live-red)
 ![SQLite](https://img.shields.io/badge/SQLite-Database-green)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
+![Tests](https://github.com/Raj200727/world-cup-predictor/actions/workflows/test.yml/badge.svg)
 
 A match probability engine for the 2026 FIFA World Cup, built entirely in Python. It uses a Poisson distribution model trained on 92 years of World Cup history (1930–2022) to generate win/draw/loss probabilities, expected goals, and exact scoreline likelihoods for every fixture in the tournament.
 
