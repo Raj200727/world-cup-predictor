@@ -25,7 +25,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-
+from zoneinfo import ZoneInfo
 import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
@@ -418,10 +418,17 @@ def load_fixtures() -> list[dict]:
 
 
 def _format_date(raw: str) -> str:
-    """Convert ISO datetime string to display format."""
+    """Convert UTC datetime string to Eastern Time."""
     try:
-        dt = datetime.fromisoformat(str(raw).replace("Z", ""))
-        return dt.strftime("%a %d %b  ·  %H:%M UTC")
+        utc_dt = (
+            datetime.fromisoformat(str(raw).replace("Z", ""))
+            .replace(tzinfo=ZoneInfo("UTC"))
+        )
+
+        et_dt = utc_dt.astimezone(ZoneInfo("America/Toronto"))
+
+        return et_dt.strftime("%a %d %b  •  %I:%M %p ET")
+
     except Exception:
         return str(raw)
 
