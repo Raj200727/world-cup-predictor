@@ -87,6 +87,12 @@ BASE_YEAR        = 2023     # reference point for recency decay
 # do not reuse DECAY_HALF_LIFE / BASE_YEAR for the form layer.
 FORM_DECAY_HALF_LIFE = 3.0     # years — much shorter than the WC layer's 16.0
 
+# --- Hybrid model constants (Milestone 3) -----------------------------------
+# Blend ratio between the historical WC layer and the recent-form layer.
+# load_hybrid_stats() defaults to these but accepts overrides per call —
+# no automatic optimisation here, that belongs to a later milestone.
+DEFAULT_HISTORICAL_WEIGHT = 0.70
+DEFAULT_FORM_WEIGHT       = 0.30
 
 # Seasons considered "modern era" and always included by default.
 # Extend this list to include older tournaments if you want more signal.
@@ -254,7 +260,7 @@ def _recency_weight(season: int, base_year: int = BASE_YEAR,
 
 def _form_recency_weight(
     match_date: str,
-    reference_date: datetime,
+     reference_date: datetime,
     half_life: float  = FORM_DECAY_HALF_LIFE,
 ) -> float:
     """
@@ -270,9 +276,10 @@ def _form_recency_weight(
     half_life=3.0 means a match 3 years ago has weight 0.5.
     """
     try:
-        match_datetime = datetime.fromisoformat(str(match_date)[:10])
-        age_years = (reference_date - match_datetime).days / 365.25
-        
+        match_year_fraction = datetime.fromisoformat(str(match_date)[:10])
+        age_years = (
+            reference_date - match_year_fraction
+        ).days / 365.25
     except (ValueError, TypeError):
         age_years = 0.0   # unparseable date — treat as fully recent rather than drop it
 
@@ -354,6 +361,7 @@ def load_team_stats(
                 "wins":     0.0,
                 "draws":    0.0,
                 "losses":   0.0,
+                "raw_matches": 0,
                 "seasons":  set(),
             }
         return accum[cn]
@@ -370,6 +378,7 @@ def load_team_stats(
         h["scored"]   += hs  * w
         h["conceded"] += aws * w
         h["weight"]   += w
+        h["raw_matches"] += 1
         h["seasons"].add(row["season"])
 
         # Away team perspective
@@ -377,6 +386,7 @@ def load_team_stats(
         a["scored"]   += aws * w
         a["conceded"] += hs  * w
         a["weight"]   += w
+        a["raw_matches"] += 1
         a["seasons"].add(row["season"])
 
         # Wins / draws / losses (full-time result only)
@@ -473,7 +483,7 @@ def load_team_stats(
 #
 #     form_stats = load_form_stats()
 #     result = predict_match(form_stats, "Canada", "South Africa")
-# 
+#
 # predict_match() / expected_goals() / scoreline_matrix() / simulate_match()
 # have NO knowledge of which loader produced the TeamStats dict they were
 # given — that separation is what makes this drop-in compatible.
@@ -575,6 +585,7 @@ def load_form_stats(
                 "wins":     0.0,
                 "draws":    0.0,
                 "losses":   0.0,
+                "raw_matches": 0,
                 "seasons":  set(),
             }
         return accum[cn]
@@ -582,10 +593,11 @@ def load_form_stats(
     for row in rows:
         # weight = competition_weight (from DB, not hardcoded) × recency
         comp_w = row["competition_weight"]
-        rec_w  = _form_recency_weight(
+        rec_w = _form_recency_weight(
         row["match_date"],
-        cutoff_dt)
-        w = comp_w * rec_w
+        cutoff_dt
+        )
+        w      = comp_w * rec_w
 
         home = _normalise(row["home_team"])
         away = _normalise(row["away_team"])
@@ -597,6 +609,7 @@ def load_form_stats(
         h["scored"]   += hs  * w
         h["conceded"] += aws * w
         h["weight"]   += w
+        h["raw_matches"] += 1
         h["seasons"].add(row["match_date"][:4])   # year string, for display only
 
         # Away team perspective
@@ -604,6 +617,7 @@ def load_form_stats(
         a["scored"]   += aws * w
         a["conceded"] += hs  * w
         a["weight"]   += w
+        a["raw_matches"] += 1
         a["seasons"].add(row["match_date"][:4])
 
         # Wins / draws / losses (full-time result, derived from scores —
@@ -645,7 +659,6 @@ def load_form_stats(
 
         avg_scored   = v["scored"]   / w
         avg_conceded = v["conceded"] / w
-        matches_est  = round(w)
 
         atk = avg_scored   / global_scored   if global_scored   > 0 else 1.0
         dfn = avg_conceded / global_conceded if global_conceded > 0 else 1.0
@@ -656,7 +669,7 @@ def load_form_stats(
 
         stats[name] = TeamRecord(
             name             = name,
-            matches          = matches_est,
+            matches          = v["raw_matches"],
             goals_scored     = avg_scored,
             goals_conceded   = avg_conceded,
             attack_strength  = atk,
@@ -688,6 +701,240 @@ def load_form_stats(
     )
 
     return stats
+
+
+# ---------------------------------------------------------------------------
+# Hybrid model (Milestone 3)
+# ---------------------------------------------------------------------------
+# Combines the historical WC layer (load_team_stats) and the recent-form
+# layer (load_form_stats) into a single TeamStats dict. This is purely a
+# blending step — it calls the two existing loaders and combines their
+# output, with zero duplication of the accumulation/decay logic that
+# already lives in those two functions.
+#
+# The result is the SAME TeamRecord dataclass used everywhere else, so it
+# plugs directly into predict_match() / simulate_match() with no changes
+# to the Poisson engine. load_team_stats(), load_form_stats(), and
+# load_hybrid_stats() are now three interchangeable TeamStats sources.
+# ---------------------------------------------------------------------------
+
+def blend_team_record(
+    historical:         Optional[TeamRecord],
+    form:                Optional[TeamRecord],
+    historical_weight:   float = DEFAULT_HISTORICAL_WEIGHT,
+    form_weight:         float = DEFAULT_FORM_WEIGHT,
+) -> TeamRecord:
+    """
+    Blend one team's historical and recent-form TeamRecords into a single
+    hybrid TeamRecord. All blending logic for the hybrid model is isolated
+    here — load_hybrid_stats() never blends fields directly.
+
+    Only the CORE rating parameters (attack_strength, defense_strength)
+    are weight-blended, per spec. Everything else follows the edge-case
+    and "informational only" rules below rather than being averaged:
+
+      - If both records exist: attack/defense are blended; matches,
+        goals_scored/conceded, win/draw/loss rates, and seasons_seen
+        come from the FORM record (recent form is the more relevant
+        source for "what does this team look like right now" stats),
+        with the historical record's name/seasons folded in for context.
+      - If only historical exists: returned as-is (no blending possible).
+      - If only form exists: returned as-is (no blending possible).
+
+    Parameters
+    ----------
+    historical          : TeamRecord from load_team_stats(), or None if
+                          the team has no WC history
+    form                 : TeamRecord from load_form_stats(), or None if
+                          the team has no recent international form
+    historical_weight    : weight applied to the historical attack/defense
+    form_weight          : weight applied to the form attack/defense
+
+    Returns
+    -------
+    TeamRecord — the same dataclass used throughout the project
+    """
+    # Edge case: team exists in only one dataset — use it as-is, unmodified.
+    if historical is not None and form is None:
+        return historical
+    if form is not None and historical is None:
+        return form
+    if historical is None and form is None:
+        raise ValueError("blend_team_record() requires at least one of historical/form")
+
+    # Both exist — blend attack/defense strength only, per spec.
+    hybrid_attack  = historical_weight * historical.attack_strength \
+                    + form_weight       * form.attack_strength
+    hybrid_defense = historical_weight * historical.defense_strength \
+                    + form_weight       * form.defense_strength
+
+    # Informational fields: sourced from FORM (more relevant to "current"
+    # team state) rather than averaged — per spec, wins/draws/losses and
+    # goals scored/conceded are explicitly NOT blended.
+    return TeamRecord(
+        name             = form.name,
+        matches          = form.matches,
+        goals_scored     = form.goals_scored,
+        goals_conceded   = form.goals_conceded,
+        attack_strength  = hybrid_attack,
+        defense_strength = hybrid_defense,
+        win_rate         = form.win_rate,
+        draw_rate        = form.draw_rate,
+        loss_rate        = form.loss_rate,
+        seasons_seen = sorted(set(historical.seasons_seen) | set(form.seasons_seen)),
+    )
+
+
+def load_hybrid_stats(
+    db_path:            str            = DB_PATH,
+    historical_weight:   float          = DEFAULT_HISTORICAL_WEIGHT,
+    form_weight:         float          = DEFAULT_FORM_WEIGHT,
+    cutoff_date:         Optional[str]  = None,
+    seasons:             Optional[list[int]] = None,
+    window_months:       int            = 36,
+) -> TeamStats:
+    """
+    Build a hybrid TeamStats dict by blending the historical WC layer and
+    the recent-form layer for every team that appears in either dataset.
+
+    Internally calls load_team_stats() and load_form_stats() directly —
+    no duplicated accumulation, decay, or query logic. This function only
+    unions the two team sets and blends per-team via blend_team_record().
+
+    Parameters
+    ----------
+    db_path             : path to predictor.db
+    historical_weight    : weight applied to historical attack/defense
+                           (default DEFAULT_HISTORICAL_WEIGHT = 0.70)
+    form_weight          : weight applied to form attack/defense
+                           (default DEFAULT_FORM_WEIGHT = 0.30)
+    cutoff_date           : passed straight through to load_form_stats() —
+                           lets a future backtest milestone build hybrid
+                           stats "as of" a historical date with no leakage
+    seasons               : passed straight through to load_team_stats()
+    window_months         : passed straight through to load_form_stats()
+
+    Returns
+    -------
+    dict mapping canonical team name → TeamRecord
+    (identical shape to load_team_stats() / load_form_stats())
+    """
+    log.info("Loading hybrid stats...")
+
+    historical = load_team_stats(db_path=db_path, seasons=seasons)
+    form       = load_form_stats(
+        db_path        = db_path,
+        cutoff_date     = cutoff_date,
+        window_months   = window_months,
+    )
+
+    log.info(f"  Historical teams: {len(available_teams(historical))}")
+    log.info(f"  Form teams:       {len(available_teams(form))}")
+    log.info(
+        f"  Blend ratio: {historical_weight:.0%} historical / "
+        f"{form_weight:.0%} form"
+    )
+
+    # Union of both team sets (excluding the "__global__" sentinel, which
+    # is rebuilt fresh below rather than blended like a real team).
+    hist_teams = set(historical) - {"__global__"}
+    form_teams = set(form)       - {"__global__"}
+    all_teams  = hist_teams | form_teams
+
+    hybrid: TeamStats = {}
+    for team in all_teams:
+        hybrid[team] = blend_team_record(
+            historical          = historical.get(team),
+            form                 = form.get(team),
+            historical_weight    = historical_weight,
+            form_weight          = form_weight,
+        )
+
+    # Global sentinel: blend the two global baselines the same way as any
+    # other team, so get_team_stats() fallback behaviour stays consistent
+    # for hybrid stats too.
+    hybrid["__global__"] = blend_team_record(
+        historical          = historical["__global__"],
+        form                 = form["__global__"],
+        historical_weight    = historical_weight,
+        form_weight          = form_weight,
+    )
+
+    log.info(f"  Hybrid teams: {len(available_teams(hybrid))}")
+
+    return hybrid
+
+
+def compare_team_models(
+    team_name:          str,
+    db_path:             str            = DB_PATH,
+    historical_weight:   float          = DEFAULT_HISTORICAL_WEIGHT,
+    form_weight:         float          = DEFAULT_FORM_WEIGHT,
+    cutoff_date:         Optional[str]  = None,
+) -> str:
+    """
+    Debugging / validation helper — prints a side-by-side comparison of a
+    team's historical, recent-form, and hybrid attack/defense ratings.
+
+    Used for manually sanity-checking the blend before any future milestone
+    adds automatic weight tuning. Not used by the prediction engine itself.
+
+    Example
+    -------
+        >>> print(compare_team_models("Argentina"))
+        ================================================
+          Argentina
+        ================================================
+          Historical
+            Attack:  1.31
+            Defense: 0.42
+          Recent Form
+            Attack:  1.40
+            Defense: 0.27
+          Hybrid (70/30)
+            Attack:  1.34
+            Defense: 0.37
+        ================================================
+    """
+    historical = load_team_stats(db_path=db_path)
+    form       = load_form_stats(db_path=db_path, cutoff_date=cutoff_date)
+
+    canonical = _normalise(team_name)
+
+    # Same lookup style as load_hybrid_stats(): may be None if the team
+    # doesn't appear in that dataset. get_team_stats() is used only for
+    # display purposes below, since it provides the global-average
+    # fallback when a team is genuinely absent from BOTH datasets.
+    h_raw = historical.get(canonical)
+    f_raw = form.get(canonical)
+
+    h_rec = h_raw if h_raw is not None else get_team_stats(historical, team_name)
+    f_rec = f_raw if f_raw is not None else get_team_stats(form, team_name)
+
+    hybrid_rec = blend_team_record(
+        historical          = h_raw,
+        form                 = f_raw,
+        historical_weight    = historical_weight,
+        form_weight          = form_weight,
+    )
+
+    w = 48
+    lines = [
+        "=" * w,
+        f"  {_normalise(team_name)}",
+        "=" * w,
+        "  Historical",
+        f"    Attack:  {h_rec.attack_strength:.2f}",
+        f"    Defense: {h_rec.defense_strength:.2f}",
+        "  Recent Form",
+        f"    Attack:  {f_rec.attack_strength:.2f}",
+        f"    Defense: {f_rec.defense_strength:.2f}",
+        f"  Hybrid ({historical_weight:.0%}/{form_weight:.0%})",
+        f"    Attack:  {hybrid_rec.attack_strength:.2f}",
+        f"    Defense: {hybrid_rec.defense_strength:.2f}",
+        "=" * w,
+    ]
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
