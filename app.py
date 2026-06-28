@@ -47,6 +47,21 @@ DB_PATH         = "predictor.db"
 TRAIN_SEASONS   = list(range(1930, 2023, 4))   # 1930–2022 full history
 UPCOMING_SEASON = 2026
 
+# Model selection (Milestone 5): the actual default model, blend weights,
+# and form-window length all live in math_engine.py's config block — this
+# app never re-declares them. MODEL_OPTIONS below only maps the UI radio
+# labels to the model keys math_engine.get_stats() understands; the label
+# TEXT itself is intentionally hardcoded here (it's UI copy), but the
+# numbers behind "Hybrid (Recommended)" — 40%/60%/36 months — are NOT
+# duplicated here; they're read live from me.MODEL_INFO at render time.
+MODEL_OPTIONS = {
+    "Historical":            "historical",
+    "Recent Form":           "form",
+    "Hybrid (Recommended)":  "hybrid",
+}
+MODEL_OPTION_LABELS = list(MODEL_OPTIONS.keys())
+DEFAULT_MODEL_LABEL = "Hybrid (Recommended)"   # must match me.DEFAULT_MODEL == "hybrid"
+
 # Palette
 CLR_BG          = "#0D1F17"
 CLR_SURFACE     = "#132B1E"
@@ -289,6 +304,19 @@ st.markdown(f"""
       margin-bottom: 0.8rem;
   }}
 
+  /* ── Model badge (Milestone 5) ── */
+  .model-badge {{
+      font-family: 'Space Mono', monospace;
+      font-size: 0.72rem;
+      color: {CLR_MUTED};
+      letter-spacing: 0.02em;
+      margin: 0.6rem 0 0.2rem 0;
+  }}
+  .model-badge b {{
+      color: {CLR_ACCENT};
+      font-weight: 700;
+  }}
+
   /* ── Streamlit widget overrides ── */
   div[data-baseweb="select"] > div {{
       background: {CLR_SURFACE} !important;
@@ -337,12 +365,22 @@ st.markdown(f"""
 # ---------------------------------------------------------------------------
 
 @st.cache_data(show_spinner=False)
-def load_stats() -> me.TeamStats:
-    """Load team stats once; cached for the session."""
-    return me.load_team_stats(
-        db_path            = DB_PATH,
-        seasons            = TRAIN_SEASONS,
-        exclude_extra_time = True,
+def load_stats(model: str = me.DEFAULT_MODEL) -> me.TeamStats:
+    """
+    Load team stats for the selected model; cached per-model for the
+    session (Streamlit's @st.cache_data keys on the `model` argument
+    automatically, so switching the radio button doesn't require manual
+    cache management here).
+
+    Delegates to math_engine.get_stats(), which has its own internal
+    process-level cache (see math_engine._STATS_CACHE) — so even across
+    Streamlit reruns/sessions that share a process, the underlying
+    historical/form datasets are only built from SQLite once per model.
+    """
+    return me.get_stats(
+        model    = model,
+        db_path  = DB_PATH,
+        seasons  = TRAIN_SEASONS,
     )
 
 
@@ -604,13 +642,26 @@ def main():
     <div class="masthead">
       <div class="masthead-title">World Cup <span class="masthead-accent">2026</span></div>
     </div>
-    <div class="masthead-sub">Match probability engine  ·  Poisson model  ·  WC 1930–2022 data</div>
+    <div class="masthead-sub">Match probability engine  ·  Poisson model</div>
     """, unsafe_allow_html=True)
+
+    # ── Model selector (Milestone 5) ────────────────────────────────────────
+    st.markdown('<div class="section-label">Prediction model</div>',
+                unsafe_allow_html=True)
+    selected_label = st.radio(
+        "Prediction model",
+        options=MODEL_OPTION_LABELS,
+        index=MODEL_OPTION_LABELS.index(DEFAULT_MODEL_LABEL),
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    selected_model = MODEL_OPTIONS[selected_label]
+    model_info     = me.describe_model(selected_model)
 
     # ── Load data ───────────────────────────────────────────────────────────
     with st.spinner("Loading team stats…"):
         try:
-            stats = load_stats()
+            stats = load_stats(model=selected_model)
         except FileNotFoundError:
             st.error(
                 f"**Database not found:** `{DB_PATH}`\n\n"
@@ -705,6 +756,13 @@ def main():
 
     # ── Prediction ──────────────────────────────────────────────────────────
     result = me.predict_match(stats, home_team, away_team)
+
+    # ── Model badge — compact "what generated this" line (Milestone 5) ──────
+    st.markdown(
+        f'<div class="model-badge">Prediction generated using '
+        f'<b>{model_info["label"]}</b></div>',
+        unsafe_allow_html=True,
+    )
 
     # ── Outcome probability bar ──────────────────────────────────────────────
     st.markdown('<div class="section-label">Win probability</div>',
@@ -809,13 +867,18 @@ def main():
     # ── Model details expander ────────────────────────────────────────────────
     with st.expander("Model details", expanded=False):
         st.markdown(f"""
-**How the model works**
+**Prediction generated using:**
 
-This is a Poisson distribution model trained on **{len(me.available_teams(stats))} teams**
-across **WC 1930–2022** (900+ matches). It uses exponential recency weighting —
-WC 2022 data contributes ~3× more signal than WC 1990.
+**{model_info['label']}**
 
-For each team, the model estimates:
+{model_info['description']}
+
+---
+
+**How the underlying Poisson math works**
+
+Every model variant feeds the same Poisson engine. For each team, the model
+estimates:
 - **Attack strength** = team's avg goals scored ÷ global average goals scored
 - **Defense strength** = team's avg goals conceded ÷ global average goals conceded
 
@@ -829,19 +892,20 @@ The full scoreline matrix (P(home=i) × P(away=j)) is computed via `scipy.stats.
 then summed across all cells where home > away (win), home = away (draw), home < away (loss).
 
 No home advantage is applied — all World Cup matches are at neutral venues.
-Extra-time and penalty results are excluded from training data.
+Extra-time and penalty results are excluded from the historical training data.
 
 **Known limitations:** Draws are systematically underestimated (base Poisson treats goals as
 independent; real teams lower tempo when ahead). The 80–90% confidence bucket shows
 overconfidence on large mismatches (e.g. Argentina vs Saudi Arabia). Dixon-Coles correction
 is planned for v2.
+
+Currently **{len(me.available_teams(stats))} teams** have data under the selected model.
         """)
 
     # ── Footer ───────────────────────────────────────────────────────────────
     st.markdown(
         f'<div class="footer">WC 2026 Predictor  ·  '
-        f'Poisson model  ·  {len(me.available_teams(stats))} teams  ·  '
-        f'Data: WC 1930–2022</div>',
+        f'{model_info["label"]}  ·  {len(me.available_teams(stats))} teams</div>',
         unsafe_allow_html=True,
     )
 

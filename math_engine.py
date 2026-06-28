@@ -11,7 +11,16 @@ and Monte Carlo loops can call them freely without hidden shared state.
 
 Public API (import-safe)
 ------------------------
-    load_team_stats(db_path, seasons, exclude_extra_time)  → TeamStats dict
+    Model selection (Milestone 5) — start here for new code:
+    get_stats(model, ...)                                  → TeamStats dict (cached)
+    predict(home, away, model, ...)                        → MatchResult
+    describe_model(model)                                  → dict (label + description)
+    clear_stats_cache()                                    → invalidate the stats cache
+
+    Lower-level / model-specific loaders (still public, still supported):
+    load_team_stats(db_path, seasons, exclude_extra_time)  → TeamStats dict ("historical")
+    load_form_stats(db_path, cutoff_date, window_months)   → TeamStats dict ("form")
+    load_hybrid_stats(db_path, historical_weight, ...)     → TeamStats dict ("hybrid")
     get_team_stats(stats, team_name)                       → TeamRecord
     expected_goals(stats, home, away)                      → (λ_home, λ_away)
     scoreline_matrix(λ_home, λ_away, max_goals)            → np.ndarray
@@ -30,6 +39,9 @@ Design decisions
 - Team name normalisation handles common variants (e.g. "Korea Republic" vs
   "South Korea") via an alias table that can be extended cheaply.
 - All intermediate numpy arrays are float64 for numerical stability.
+- Model configuration (default model, blend weights, form window) lives in
+  ONE block — see "Model configuration (Milestone 5)" below — so app.py,
+  the CLI, and any future simulation runner all read the same values.
 
 Future extension points
 -----------------------
@@ -38,7 +50,9 @@ Future extension points
                            `winner` field — feed directly into bracket logic.
 - Monte Carlo:             call simulate_match() N times; aggregate outcomes.
 - Full 2026 bracket:       compose group + knockout simulators; read fixtures
-                           from upcoming_fixtures table in predictor.db.
+                           from upcoming_fixtures table in predictor.db. Use
+                           get_stats(model=...) once per bracket run (cached)
+                           rather than once per fixture.
 """
 
 from __future__ import annotations
@@ -87,16 +101,67 @@ BASE_YEAR        = 2023     # reference point for recency decay
 # do not reuse DECAY_HALF_LIFE / BASE_YEAR for the form layer.
 FORM_DECAY_HALF_LIFE = 3.0     # years — much shorter than the WC layer's 16.0
 
-# --- Hybrid model constants (Milestone 3) -----------------------------------
-# Blend ratio between the historical WC layer and the recent-form layer.
-# load_hybrid_stats() defaults to these but accepts overrides per call —
-# no automatic optimisation here, that belongs to a later milestone.
-DEFAULT_HISTORICAL_WEIGHT = 0.70
-DEFAULT_FORM_WEIGHT       = 0.30
-
 # Seasons considered "modern era" and always included by default.
 # Extend this list to include older tournaments if you want more signal.
 DEFAULT_SEASONS  = list(range(1994, 2023, 4))   # 1994 … 2022
+
+
+# ===========================================================================
+# Model configuration (Milestone 5)
+# ===========================================================================
+# Single source of truth for "which model does the app run by default, and
+# with what parameters". Nothing below changes the math from Milestones
+# 2/3 — load_team_stats() / load_form_stats() / blend_team_record() are
+# untouched. This block only sets the DEFAULT values handed to those
+# functions, and is the only constant block downstream code should ever
+# read for the active default.
+#
+# DEFAULT_HISTORICAL_WEIGHT / DEFAULT_FORM_WEIGHT were updated from the
+# original 0.70/0.30 placeholder to 0.40/0.60 per the Milestone 4 backtest
+# result: 40% Historical / 60% Recent Form produced the best average Log
+# Loss across WC 2018 and WC 2022. If a future backtest validates a new
+# ratio, update ONLY the two lines below — every caller (predict_match(),
+# get_stats(), the Streamlit app) reads from here, nothing is hardcoded
+# a second time anywhere else.
+# ---------------------------------------------------------------------------
+
+DEFAULT_MODEL              = "hybrid"   # "historical" | "form" | "hybrid"
+DEFAULT_HISTORICAL_WEIGHT  = 0.40       # validated, Milestone 4 backtest
+DEFAULT_FORM_WEIGHT        = 0.60       # validated, Milestone 4 backtest
+FORM_WINDOW_MONTHS         = 36         # passed to load_form_stats()
+FORM_HALF_LIFE             = FORM_DECAY_HALF_LIFE   # display-facing alias, see note below
+
+SUPPORTED_MODELS = ("historical", "form", "hybrid")
+
+# Human-readable labels/descriptions, used by both the CLI and the Streamlit
+# "model info" panel — kept here so UI copy and config can't drift apart.
+MODEL_INFO: dict[str, dict] = {
+    "historical": {
+        "label": "Historical",
+        "description": "World Cup history only (1930–2022), recency-weighted "
+                        f"with a {DECAY_HALF_LIFE:.0f}-year half-life.",
+    },
+    "form": {
+        "label": "Recent Form",
+        "description": f"Last {FORM_WINDOW_MONTHS} months of international "
+                        f"results, competition-weighted and recency-weighted "
+                        f"with a {FORM_HALF_LIFE:.1f}-year half-life.",
+    },
+    "hybrid": {
+        "label": "Hybrid (Recommended)",
+        "description": f"{DEFAULT_HISTORICAL_WEIGHT:.0%} Historical World Cup "
+                        f"strength + {DEFAULT_FORM_WEIGHT:.0%} Recent "
+                        f"International Form. Recent window: "
+                        f"{FORM_WINDOW_MONTHS} months. Competition-weighted. "
+                        f"Recency-weighted.",
+    },
+}
+# NOTE on FORM_HALF_LIFE vs FORM_DECAY_HALF_LIFE: the Milestone 2 decay
+# function _form_recency_weight() reads FORM_DECAY_HALF_LIFE directly (its
+# default arg is bound to that name at function-definition time) — that
+# function is frozen and untouched per Milestone 5 scope. FORM_HALF_LIFE is
+# purely a display-facing alias so the config block has a single home for
+# the value, without renaming the constant the decay math actually depends on.
 
 # ---------------------------------------------------------------------------
 # Team name aliases
@@ -937,6 +1002,164 @@ def compare_team_models(
     return "\n".join(lines)
 
 
+# ===========================================================================
+# Model selection & caching (Milestone 5)
+# ===========================================================================
+# This section is purely integration plumbing. It does not introduce any
+# new statistics, weighting, or probability logic — it only:
+#   1. gives every caller (app.py, the CLI, future tournament/bracket
+#      runners) ONE function to ask for "the stats for model X", instead
+#      of each caller needing to know which of the three loaders to call
+#      and with which config constants
+#   2. caches the result of each (model, params) combination so a Streamlit
+#      session — or a loop predicting many fixtures — doesn't re-read and
+#      re-aggregate the SQLite tables on every single prediction
+#
+# get_team_stats(), expected_goals(), scoreline_matrix(), predict_match(),
+# and simulate_match() are completely unaware this section exists — they
+# still just accept a TeamStats dict, exactly as before. That's what keeps
+# this backwards compatible: nothing about their signature or behaviour
+# changed.
+# ---------------------------------------------------------------------------
+
+# Process-level cache: {cache_key: TeamStats}. A plain dict is sufficient
+# here (and avoids pulling in functools.lru_cache, which can't hash the
+# Optional[list[int]] `seasons` argument cleanly) — cache_key is built from
+# only the primitive values that actually affect the query/blend result.
+_STATS_CACHE: dict[tuple, TeamStats] = {}
+
+
+def _cache_key(
+    model:               str,
+    db_path:              str,
+    seasons:               Optional[tuple[int, ...]],
+    cutoff_date:           Optional[str],
+    window_months:         int,
+    historical_weight:     Optional[float],
+    form_weight:            Optional[float],
+) -> tuple:
+    """Build a hashable cache key from only the args relevant to `model`."""
+    return (model, db_path, seasons, cutoff_date, window_months,
+            historical_weight, form_weight)
+
+
+def clear_stats_cache() -> None:
+    """
+    Drop every cached TeamStats result.
+
+    Call this if the underlying database has changed since stats were last
+    loaded (e.g. after re-running ingest_api.py / ingest_csv.py / a fresh
+    Streamlit deploy with new data) — otherwise get_stats() keeps returning
+    the stale, previously-cached dict for the same (model, params) key.
+    """
+    _STATS_CACHE.clear()
+
+
+def get_stats(
+    model:               str                  = DEFAULT_MODEL,
+    db_path:              str                  = DB_PATH,
+    seasons:               Optional[list[int]]  = None,
+    cutoff_date:           Optional[str]        = None,
+    window_months:         int                  = FORM_WINDOW_MONTHS,
+    historical_weight:     float                = DEFAULT_HISTORICAL_WEIGHT,
+    form_weight:            float                = DEFAULT_FORM_WEIGHT,
+    use_cache:              bool                 = True,
+) -> TeamStats:
+    """
+    Single entry point for "give me a TeamStats dict for model X".
+
+    This is the function app.py, the CLI, and any future tournament
+    simulator should call — not load_team_stats() / load_form_stats() /
+    load_hybrid_stats() directly — so that model selection stays in one
+    place and so repeated calls with the same parameters reuse a cached
+    result instead of rebuilding from SQLite every time.
+
+    Parameters
+    ----------
+    model               : "historical" | "form" | "hybrid" (default:
+                          DEFAULT_MODEL, currently "hybrid")
+    db_path              : path to predictor.db
+    seasons               : WC seasons to include — only used by
+                          "historical" and "hybrid"; None → DEFAULT_SEASONS
+                          (passed straight through to load_team_stats())
+    cutoff_date           : "as of" date for the form layer — only used by
+                          "form" and "hybrid"; None → today
+    window_months         : recent-form rolling window — only used by
+                          "form" and "hybrid"; default FORM_WINDOW_MONTHS
+    historical_weight     : blend weight — only used by "hybrid";
+                          default DEFAULT_HISTORICAL_WEIGHT (0.40)
+    form_weight            : blend weight — only used by "hybrid";
+                          default DEFAULT_FORM_WEIGHT (0.60)
+    use_cache              : if True (default), reuse a previously built
+                          TeamStats dict for an identical (model, params)
+                          call instead of re-querying the database
+
+    Returns
+    -------
+    TeamStats dict — identical shape regardless of which model was chosen,
+    so every downstream function (get_team_stats(), expected_goals(),
+    predict_match(), simulate_match()) works unmodified.
+
+    Raises
+    ------
+    ValueError if `model` is not one of SUPPORTED_MODELS.
+    """
+    if model not in SUPPORTED_MODELS:
+        raise ValueError(
+            f"Unknown model {model!r}. Supported models: {SUPPORTED_MODELS}"
+        )
+
+    seasons_key = tuple(seasons) if seasons is not None else None
+    key = _cache_key(
+        model, db_path, seasons_key, cutoff_date, window_months,
+        historical_weight if model == "hybrid" else None,
+        form_weight if model == "hybrid" else None,
+    )
+
+    if use_cache and key in _STATS_CACHE:
+        log.debug(f"  get_stats() cache hit — model={model}")
+        return _STATS_CACHE[key]
+
+    if model == "historical":
+        stats = load_team_stats(db_path=db_path, seasons=seasons)
+
+    elif model == "form":
+        stats = load_form_stats(
+            db_path        = db_path,
+            cutoff_date     = cutoff_date,
+            window_months   = window_months,
+        )
+
+    else:  # "hybrid"
+        stats = load_hybrid_stats(
+            db_path             = db_path,
+            historical_weight    = historical_weight,
+            form_weight           = form_weight,
+            cutoff_date           = cutoff_date,
+            seasons               = seasons,
+            window_months         = window_months,
+        )
+
+    if use_cache:
+        _STATS_CACHE[key] = stats
+
+    return stats
+
+
+def describe_model(model: str = DEFAULT_MODEL) -> dict:
+    """
+    Return the display-facing info dict for `model` from MODEL_INFO.
+
+    Used by the Streamlit "model details" panel so the UI never hardcodes
+    model copy itself — it just renders whatever this returns.
+    """
+    if model not in SUPPORTED_MODELS:
+        raise ValueError(
+            f"Unknown model {model!r}. Supported models: {SUPPORTED_MODELS}"
+        )
+    return MODEL_INFO[model]
+
+
 # ---------------------------------------------------------------------------
 # Team lookup
 # ---------------------------------------------------------------------------
@@ -1126,6 +1349,54 @@ def predict_match(
         scorelines    = scorelines,
         matrix        = matrix,
     )
+
+
+def predict(
+    home_team:            str,
+    away_team:             str,
+    model:                  str            = DEFAULT_MODEL,
+    db_path:                str            = DB_PATH,
+    seasons:                 Optional[list[int]] = None,
+    cutoff_date:             Optional[str]  = None,
+    window_months:           int            = FORM_WINDOW_MONTHS,
+    historical_weight:       float          = DEFAULT_HISTORICAL_WEIGHT,
+    form_weight:              float          = DEFAULT_FORM_WEIGHT,
+    max_goals:                int            = MAX_GOALS,
+    use_cache:                bool           = True,
+) -> MatchResult:
+    """
+    Model-aware convenience wrapper around predict_match() (Milestone 5).
+
+    predict_match() still takes a pre-built `stats` dict as its first
+    argument and is unchanged — this function exists alongside it so a
+    caller can ask for a prediction by MODEL NAME instead of having to
+    build the TeamStats dict themselves first:
+
+        predict("Argentina", "Brazil")                    # uses DEFAULT_MODEL ("hybrid")
+        predict("Argentina", "Brazil", model="historical")
+        predict("Argentina", "Brazil", model="form")
+
+    Internally this is just get_stats(model=...) followed by
+    predict_match(stats, ...) — no new prediction logic, no change to the
+    Poisson engine. get_stats() caching means calling predict() repeatedly
+    for the same model/params (e.g. once per fixture in a tournament
+    bracket) does not re-read or re-aggregate the database each time.
+
+    Returns
+    -------
+    MatchResult — identical to predict_match()'s return value.
+    """
+    stats = get_stats(
+        model               = model,
+        db_path              = db_path,
+        seasons               = seasons,
+        cutoff_date           = cutoff_date,
+        window_months         = window_months,
+        historical_weight     = historical_weight,
+        form_weight            = form_weight,
+        use_cache              = use_cache,
+    )
+    return predict_match(stats, home_team, away_team, max_goals=max_goals)
 
 
 # ---------------------------------------------------------------------------
