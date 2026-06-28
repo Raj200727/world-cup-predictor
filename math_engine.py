@@ -49,6 +49,7 @@ import math
 import random
 import sqlite3
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -76,6 +77,16 @@ MIN_MATCHES      = 3        # minimum matches a team needs to get its own stats
                              # (below this → fall back to global average)
 DECAY_HALF_LIFE  = 16.0    # years — WC 2022 weight ≈ 3× WC 1990, ≈ 6× WC 1930
 BASE_YEAR        = 2023     # reference point for recency decay
+
+# --- Recent Form layer constants (Milestone 2) ------------------------------
+# Separate from the WC-history constants above. The form layer reads from
+# international_results (not historical_results) and decays much faster —
+# a qualifier from 6 years ago should barely matter for "current form",
+# whereas a World Cup from 16 years ago still carries some signal for the
+# historical layer. These two decay systems are intentionally independent;
+# do not reuse DECAY_HALF_LIFE / BASE_YEAR for the form layer.
+FORM_DECAY_HALF_LIFE = 3.0     # years — much shorter than the WC layer's 16.0
+
 
 # Seasons considered "modern era" and always included by default.
 # Extend this list to include older tournaments if you want more signal.
@@ -239,6 +250,34 @@ def _recency_weight(season: int, base_year: int = BASE_YEAR,
     """
     age = max(0, base_year - season)
     return math.exp(-math.log(2) * age / half_life)
+
+
+def _form_recency_weight(
+    match_date: str,
+    reference_date: datetime,
+    half_life: float  = FORM_DECAY_HALF_LIFE,
+) -> float:
+    """
+    Exponential decay weight for the Recent Form layer (Milestone 2).
+
+    Mirrors _recency_weight() above but operates on a full ISO date
+    string (international_results.match_date is 'YYYY-MM-DD', not a
+    bare season/year int like historical_results.season) and uses the
+    much shorter FORM_DECAY_HALF_LIFE instead of the WC layer's
+    DECAY_HALF_LIFE. The WC decay function above is left completely
+    unmodified — this is a parallel, independent implementation.
+
+    half_life=3.0 means a match 3 years ago has weight 0.5.
+    """
+    try:
+        match_datetime = datetime.fromisoformat(str(match_date)[:10])
+        age_years = (reference_date - match_datetime).days / 365.25
+        
+    except (ValueError, TypeError):
+        age_years = 0.0   # unparseable date — treat as fully recent rather than drop it
+
+    age_years = max(0.0, age_years)
+    return math.exp(-math.log(2) * age_years / half_life)
 
 
 def load_team_stats(
@@ -405,6 +444,235 @@ def load_team_stats(
 
     # ------------------------------------------------------------------
     # Add a sentinel "GLOBAL_AVERAGE" entry for fallback lookups
+    # ------------------------------------------------------------------
+
+    stats["__global__"] = TeamRecord(
+        name             = "__global__",
+        matches          = round(total_weight),
+        goals_scored     = global_scored,
+        goals_conceded   = global_conceded,
+        attack_strength  = 1.0,
+        defense_strength = 1.0,
+        win_rate         = 0.0,
+        draw_rate        = 0.0,
+        loss_rate        = 0.0,
+    )
+
+    return stats
+
+
+# ---------------------------------------------------------------------------
+# Recent Form layer (Milestone 2)
+# ---------------------------------------------------------------------------
+# Completely independent of load_team_stats() above. Reads ONLY from
+# international_results — historical_results is never touched here.
+#
+# The returned TeamStats dict has the EXACT same shape as load_team_stats()'s
+# output (same TeamRecord dataclass, same "__global__" sentinel key), so it
+# is a drop-in replacement anywhere a TeamStats dict is expected:
+#
+#     form_stats = load_form_stats()
+#     result = predict_match(form_stats, "Canada", "South Africa")
+# 
+# predict_match() / expected_goals() / scoreline_matrix() / simulate_match()
+# have NO knowledge of which loader produced the TeamStats dict they were
+# given — that separation is what makes this drop-in compatible.
+# ---------------------------------------------------------------------------
+
+def load_form_stats(
+    db_path:        str            = DB_PATH,
+    cutoff_date:    Optional[str]  = None,
+    window_months:  int            = 36,
+) -> TeamStats:
+    """
+    Read international_results and compute per-team Recent Form strength
+    metrics. Mirrors load_team_stats() structurally, but:
+
+      - reads international_results instead of historical_results
+      - has no season filter — instead uses a rolling date window
+      - weight = competition_weight (read from the DB column, NOT
+        hardcoded here) × _form_recency_weight() (3-year half-life)
+
+    Parameters
+    ----------
+    db_path        : path to predictor.db
+    cutoff_date     : ISO date string ('YYYY-MM-DD') to treat as "today"
+                      for both the rolling window and the recency decay.
+                      None → uses today's date. Pass an explicit cutoff
+                      for backtesting (e.g. cutoff_date="2022-11-01" to
+                      build form stats as they would have looked just
+                      before WC 2022 kicked off).
+    window_months   : how many months before cutoff_date to include.
+                      Default 36 (3 years) — see Priority 1A evaluation.
+
+    Returns
+    -------
+    dict mapping canonical team name → TeamRecord
+    (identical shape to load_team_stats()'s return value)
+    """
+    if cutoff_date is None:
+        cutoff_date = datetime.utcnow().date().isoformat()
+
+    cutoff_dt   = datetime.fromisoformat(cutoff_date[:10])
+    window_start = (
+        cutoff_dt.replace(year=cutoff_dt.year - (window_months // 12))
+        if window_months % 12 == 0
+        else cutoff_dt.fromordinal(cutoff_dt.toordinal() - window_months * 30)
+    )
+    window_start_str = window_start.date().isoformat()
+
+    log.info(
+        f"Loading form stats | window={window_start_str} → {cutoff_date} "
+        f"({window_months}mo) | half_life={FORM_DECAY_HALF_LIFE}y"
+    )
+
+    conn = _connect(db_path)
+
+    query = """
+        SELECT
+            home_team,
+            away_team,
+            home_score,
+            away_score,
+            match_date,
+            competition_weight,
+            tournament_tier
+        FROM international_results
+        WHERE tournament_tier != 'EXCLUDED'
+          AND match_date >= ?
+          AND match_date <  ?
+    """
+
+    rows = conn.execute(query, (window_start_str, cutoff_date)).fetchall()
+    conn.close()
+
+    if not rows:
+        raise ValueError(
+            f"No international form data found in window "
+            f"{window_start_str} → {cutoff_date}.\n"
+            "  Check that ingest_form.py was run and international_results "
+            "is populated."
+        )
+
+    log.info(f"  Loaded {len(rows)} matches for form stats calculation")
+
+    # ------------------------------------------------------------------
+    # Accumulate weighted statistics per canonical team name
+    # Identical accumulator shape to load_team_stats() — "seasons" here
+    # holds match_date strings rather than int years, used only for the
+    # TeamRecord.seasons_seen field (kept for interface compatibility).
+    # ------------------------------------------------------------------
+
+    accum: dict[str, dict] = {}
+
+    def _acc(name: str) -> dict:
+        cn = _normalise(name)
+        if cn not in accum:
+            accum[cn] = {
+                "scored":   0.0,
+                "conceded": 0.0,
+                "weight":   0.0,
+                "wins":     0.0,
+                "draws":    0.0,
+                "losses":   0.0,
+                "seasons":  set(),
+            }
+        return accum[cn]
+
+    for row in rows:
+        # weight = competition_weight (from DB, not hardcoded) × recency
+        comp_w = row["competition_weight"]
+        rec_w  = _form_recency_weight(
+        row["match_date"],
+        cutoff_dt)
+        w = comp_w * rec_w
+
+        home = _normalise(row["home_team"])
+        away = _normalise(row["away_team"])
+        hs   = row["home_score"]
+        aws  = row["away_score"]
+
+        # Home team perspective
+        h = _acc(home)
+        h["scored"]   += hs  * w
+        h["conceded"] += aws * w
+        h["weight"]   += w
+        h["seasons"].add(row["match_date"][:4])   # year string, for display only
+
+        # Away team perspective
+        a = _acc(away)
+        a["scored"]   += aws * w
+        a["conceded"] += hs  * w
+        a["weight"]   += w
+        a["seasons"].add(row["match_date"][:4])
+
+        # Wins / draws / losses (full-time result, derived from scores —
+        # international_results has no pre-computed "winner" column)
+        if hs > aws:
+            h["wins"]   += w
+            a["losses"] += w
+        elif aws > hs:
+            a["wins"]   += w
+            h["losses"] += w
+        else:
+            h["draws"] += w
+            a["draws"] += w
+
+    # ------------------------------------------------------------------
+    # Global baseline averages (weighted) — identical formula to
+    # load_team_stats(), computed independently over the form dataset.
+    # ------------------------------------------------------------------
+
+    total_weight  = sum(v["weight"] for v in accum.values())
+    global_scored = sum(v["scored"] for v in accum.values()) / total_weight
+    global_conceded = global_scored   # symmetric — same assumption as WC layer
+
+    log.info(
+        f"  Global avg goals scored/conceded per team per match (form): "
+        f"{global_scored:.4f}"
+    )
+
+    # ------------------------------------------------------------------
+    # Build TeamRecord objects — identical construction to load_team_stats()
+    # ------------------------------------------------------------------
+
+    stats: TeamStats = {}
+
+    for name, v in accum.items():
+        w = v["weight"]
+        if w == 0:
+            continue
+
+        avg_scored   = v["scored"]   / w
+        avg_conceded = v["conceded"] / w
+        matches_est  = round(w)
+
+        atk = avg_scored   / global_scored   if global_scored   > 0 else 1.0
+        dfn = avg_conceded / global_conceded if global_conceded > 0 else 1.0
+
+        win_rate  = v["wins"]   / w
+        draw_rate = v["draws"]  / w
+        loss_rate = v["losses"] / w
+
+        stats[name] = TeamRecord(
+            name             = name,
+            matches          = matches_est,
+            goals_scored     = avg_scored,
+            goals_conceded   = avg_conceded,
+            attack_strength  = atk,
+            defense_strength = dfn,
+            win_rate         = win_rate,
+            draw_rate        = draw_rate,
+            loss_rate        = loss_rate,
+            seasons_seen     = sorted(int(y) for y in v["seasons"]),
+        )
+
+    log.info(f"  Built form stats for {len(stats)} teams")
+
+    # ------------------------------------------------------------------
+    # Sentinel "GLOBAL_AVERAGE" entry — identical convention to
+    # load_team_stats(), so get_team_stats() fallback logic works
+    # unmodified against form_stats too.
     # ------------------------------------------------------------------
 
     stats["__global__"] = TeamRecord(
