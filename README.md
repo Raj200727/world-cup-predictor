@@ -5,7 +5,13 @@
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 ![Tests](https://github.com/Raj200727/world-cup-predictor/actions/workflows/test.yml/badge.svg)
 
-A match probability engine for the 2026 FIFA World Cup, built entirely in Python. It uses a Poisson distribution model trained on 92 years of World Cup history (1930–2022) to generate win/draw/loss probabilities, expected goals, and exact scoreline likelihoods for every fixture in the tournament.
+A production-style football analytics platform for predicting FIFA World Cup matches using a hybrid statistical engine that combines historical World Cup performance, recent international form, competition weighting, exponential recency decay, and Poisson goal simulation.
+
+The prediction engine ingests more than **39,000 international matches**, applies competition-specific weighting, exponential recency decay, blends historical World Cup performance with recent international form, and generates match probabilities using a Poisson goal model.
+
+The project includes automated data ingestion, SQLite database management, statistical backtesting, knockout-stage fixture management, and a fully interactive Streamlit dashboard.
+
+The architecture is designed around modular ingestion pipelines, reusable statistical components, and automated tournament updates, allowing new World Cup stages to be incorporated without modifying application code.
 
 **[Live app →](https://world-cup-predictor-wjww6fmrzy7nzefe8epety.streamlit.app)**
 
@@ -15,56 +21,201 @@ A match probability engine for the 2026 FIFA World Cup, built entirely in Python
 
 ## What it does
 
-Pick any WC 2026 fixture from the dropdown and the app tells you:
+The project provides:
 
-- **Win probability** for each side and for a draw, shown as a stacked bar so you can read the split at a glance
-- **Expected goals (xG)** — how many goals the model thinks each team will score on average
-- **Top 8 most likely exact scorelines**, coloured by outcome and sorted by probability
-- **Goal matrix heatmap** — the full joint probability table for every 0–5 × 0–5 scoreline combination
-- **Team profiles** — attack strength, defense strength, historical win/draw/loss rates, and sample size for each team
+- Match outcome prediction
+- Exact scoreline probabilities
+- Team attack and defensive ratings
+- Historical World Cup analytics
+- Recent international form analytics
+- Hybrid statistical predictions
+- Interactive Streamlit dashboard
 
-The model was backtested on WC 2018 and WC 2022 (training on all prior tournaments, testing on the target year) and scores **59.3% accuracy** and a **Brier score of 0.201** on the 2022 World Cup — competitive with bookmaker-implied odds after removing the vig.
+---
+## Project Statistics
+
+- **39,000+** international matches analyzed
+- **90+ years** of World Cup history
+- **223** international teams supported
+- **3** statistical prediction engines
+- **Poisson goal simulation**
+- **SQLite-backed architecture**
+- **Automated backtesting framework**
+- **Interactive Streamlit dashboard**
+---
+
+## Current Features
+
+- Historical World Cup prediction engine (1994–2022)
+- Recent international form model (~39,000 matches)
+- Hybrid prediction engine
+- Competition-specific weighting
+- Exponential recency weighting
+- Automated fixture ingestion
+- SQLite-backed architecture
+- Streamlit dashboard
+- Team profile analytics
+- Goal probability heatmaps
+- Exact scoreline probabilities
+- Historical backtesting framework
+- Round of 32 support
+- Automatic Eastern Time fixture display
+
+## Core Technologies
+
+- Python 3.13
+- SQLite
+- Streamlit
+- Plotly
+- NumPy
+- SciPy
+- Pandas
+- SQLAlchemy
+- Poisson Goal Model
+- Statistical Backtesting
+
+## How the Model Works
+
+The prediction engine combines two independent statistical models before generating match probabilities.
+
+```text
+Historical World Cup Matches
+                │
+                ▼
+      Historical Ratings
+                │
+                │
+International Results (39,000+)
+                │
+                ▼
+     Competition Weighting
+                │
+                ▼
+        Recency Decay
+                │
+                ▼
+       Recent Form Ratings
+                │
+                ▼
+     Hybrid Rating Engine
+                │
+                ▼
+       Expected Goals (xG)
+                │
+                ▼
+      Poisson Goal Simulation
+                │
+                ▼
+ Win / Draw / Loss Probabilities
+ Exact Scoreline Matrix
+ Goal Heatmaps
+```
+
+## Historical Model
+
+Built exclusively from FIFA World Cup matches between 1994 and 2022.
+
+Captures:
+
+- Historical attack strength
+- Historical defensive strength
+- Tournament experience
+- Long-term World Cup performance
 
 ---
 
-## How the model works
+## Recent Form Model
 
-This is a **Poisson-based attack/defense strength model**, sometimes called the Dixon-Coles-style approach (though without the full Dixon-Coles draw correction yet — that's on the v2 roadmap).
+Built from approximately **39,000 international fixtures**.
 
-**Step 1 — Team strength calculation**
+Includes:
 
-For every team in the training set, the model computes:
+- FIFA World Cup
+- FIFA World Cup Qualifiers
+- UEFA Nations League
+- CONCACAF Nations League
+- Continental Championships
+- International Friendlies
 
+Competition importance and exponential recency weighting ensure that recent competitive matches contribute significantly more than older or lower-value fixtures.
+
+---
+
+## Hybrid Rating Engine
+
+The final prediction model blends historical World Cup performance with recent international form.
+
+Current weighting:
+
+- Historical World Cup: **40%**
+- Recent International Form: **60%**
+
+These values are optimized through statistical backtesting.
+
+---
+
+## Expected Goals
+
+For each fixture:
+
+```text
+λ_home = Global Average × Home Attack × Away Defense
+
+λ_away = Global Average × Away Attack × Home Defense
 ```
-attack_strength  = team's weighted avg goals scored   ÷ global avg goals scored
-defense_strength = team's weighted avg goals conceded ÷ global avg goals conceded
-```
 
-Matches are weighted by recency using exponential decay with a 16-year half-life, so WC 2022 contributes roughly 3× more signal than WC 1994. Extra-time and penalty results are excluded from training — a 0–0 that goes to penalties doesn't reflect the same attacking/defensive quality as a 0–0 in regulation.
+---
 
-**Step 2 — Expected goals**
+## Poisson Goal Simulation
 
-For a given fixture:
+Expected goals are converted into scoreline probabilities using independent Poisson distributions.
 
-```
-λ_home = global_avg × home_attack × away_defense
-λ_away = global_avg × away_attack × home_defense
-```
+The engine computes:
 
-No home advantage multiplier is applied — every World Cup match is at a neutral venue.
+- Win probability
+- Draw probability
+- Loss probability
+- Expected goals
+- Goal probability matrix
+- Most likely scorelines
 
-**Step 3 — Scoreline matrix**
+### Historical Model
 
-Using `scipy.stats.poisson.pmf`, the model builds a 9×9 matrix where each cell `[i][j]` is `P(home scores i) × P(away scores j)`. Goals are treated as independent Poisson events.
+Built from World Cup matches between 1994 and 2022.
 
-**Step 4 — Outcome probabilities**
+Captures:
 
-Sum all cells where `i > j` → home win. `i == j` → draw. `i < j` → away win. Normalise to account for matrix truncation at 8 goals.
+- World Cup experience
+- Tournament performance
+- Historical attack strength
+- Historical defensive strength
 
-**Known limitations (see v2 roadmap below):**
-- Draws are slightly underestimated because the independent-goals assumption misses the real-world tactical correlation (teams that go ahead tend to drop tempo)
-- Teams with very few historical appearances (South Africa, Canada, Qatar) fall back to the global average rather than team-specific ratings
-- No Elo integration yet — head-to-head form and recent tournament performance aren't currently factored in
+### Recent Form Model
+
+Built from approximately 39,000 international fixtures.
+
+Includes:
+
+- FIFA World Cup
+- FIFA World Cup Qualifiers
+- UEFA Nations League
+- CONCACAF Nations League
+- Continental Championships
+- Friendlies
+
+Recent matches receive exponentially larger weights than older matches.
+
+### Hybrid Model
+
+The final prediction engine blends both models.
+
+Current weighting:
+
+Historical World Cup: 40%
+
+Recent Form: 60%
+
+Weights are validated through automated backtesting.
 
 ---
 
@@ -98,73 +249,79 @@ The model beats every naive baseline on both tournaments.
 
 ---
 
-## Project structure
+## Project Structure
 
-```
+```text
 world-cup-predictor/
 │
-├── app.py                  # Streamlit frontend — run this
-├── math_engine.py          # Poisson model — all prediction logic lives here
-├── backtest.py             # Out-of-sample validation framework
-├── ingest_api.py           # Pulls WC 2026 fixtures from football-data.org
-├── ingest_csv.py           # Loads WC 1930–2022 history from Kaggle CSVs
-│
+├── app.py
+├── math_engine.py
+├── backtest.py
+├── ingest_api.py
+├── ingest_form.py
+├── ingest_fixtures.py
+├── predictor.db
 ├── data/
-│   ├── WorldCupMatches.csv # Evangower dataset (WC 1930–2018)
-│   └── Matches.csv         # Swaptr dataset (WC 2022)
-│
-├── predictor.db            # SQLite database (generated — not committed to git)
-├── backtest_results.csv    # Backtest output (generated)
-│
-├── requirements.txt        # Python dependencies
-└── docs/
-    └── screenshot.png      # App screenshot for README
+│   ├── Matches.csv
+│   ├── WorldCupMatches.csv
+│   ├── results.csv
+│   └── fixtures_2026.csv
+├── docs/
+│   └── screenshots/
+├── requirements.txt
+└── README.md
 ```
+## System Architecture
 
+```text
+results.csv
+      │
+      ▼
+ ingest_form.py
+      │
+      ▼
+ predictor.db
+
+fixtures_2026.csv
+      │
+      ▼
+ ingest_fixtures.py
+      │
+      ▼
+ predictor.db
+      │
+      ▼
+ math_engine.py
+      │
+      ▼
+ Streamlit Dashboard
+```
 ---
 
 ## Setup
 
-### Requirements
-
-- Python 3.10+
-- A free [football-data.org](https://www.football-data.org/) API key
-
-### Install dependencies
-
 ```bash
 pip install -r requirements.txt
+
+python ingest_form.py
+
+python ingest_fixtures.py
+
+streamlit run app.py
 ```
 
-### Build the database
+### Refresh Tournament Fixtures
 
-**Step 1 — Pull WC 2026 fixtures from the API:**
+Whenever a new knockout round begins:
+
+1. Update `data/fixtures_2026.csv`
+2. Run:
 
 ```bash
-export FOOTBALL_DATA_API_KEY="your_key_here"
-python ingest_api.py --mode upcoming
+python ingest_fixtures.py
 ```
 
-**Step 2 — Download historical match data from Kaggle (free account required):**
-
-- [evangower/fifa-world-cup](https://www.kaggle.com/datasets/evangower/fifa-world-cup) → save as `data/WorldCupMatches.csv`
-- [swaptr/fifa-world-cup-2022-match-data](https://www.kaggle.com/datasets/swaptr/fifa-world-cup-2022-match-data) → save as `data/Matches.csv`
-
-**Step 3 — Load historical data into the database:**
-
-```bash
-python ingest_csv.py
-```
-
-You should see:
-```
-WC 1930-2018: 900 inserted
-WC 2022:       59 inserted
-Total:        959 rows
-```
-
-### Run the app
-
+The Streamlit application will automatically display the latest fixtures without any database editing or code changes.
 ```bash
 streamlit run app.py
 ```
@@ -193,6 +350,25 @@ python backtest.py --test-season 2018
 ---
 
 ## Requirements
+```
+Python 3.13+
+
+streamlit
+
+plotly
+
+numpy
+
+scipy
+
+pandas
+
+requests
+
+sqlalchemy
+
+sqlite3
+```
 
 ```
 streamlit>=1.28.0
@@ -206,72 +382,70 @@ sqlalchemy>=2.0.0
 
 ---
 
-## v2 Roadmap
+# Version 2 (Completed)
 
-The model is functional and beats naive baselines, but there are concrete improvements planned:
-
-### Quick wins (a few hours each)
-
-**Bayesian smoothing for small samples**
-Teams like South Africa, Canada, and Qatar have very few historical WC appearances and currently fall back to the global average. Bayesian smoothing would blend their sparse data with the global prior in proportion to sample size, giving a better estimate than a hard cutoff at 3 matches:
-
-```python
-# Instead of: if matches < 3: use global average
-# Do: blend team data with global prior
-k = 10  # prior strength (tune via backtest)
-smoothed_attack = (observed_goals + k * global_avg) / (matches + k)
-```
-
-**Draw calibration correction**
-The model predicts 0% accuracy on draws in backtesting. The standard fix is a Dixon-Coles correction factor applied to the 0–0 and 1–0/0–1 cells of the scoreline matrix. Specifically:
-
-```python
-# Correction factor for low-scoring scorelines
-def tau(x, y, lambda_h, lambda_a, rho):
-    if x == 0 and y == 0: return 1 - lambda_h * lambda_a * rho
-    if x == 1 and y == 0: return 1 + lambda_a * rho
-    if x == 0 and y == 1: return 1 + lambda_h * rho
-    if x == 1 and y == 1: return 1 - rho
-    return 1.0
-```
-Estimate `rho` from historical draw rates. Expected improvement: draw accuracy from 0% to ~20–25%.
-
-**Half-life tuning**
-Run the backtest across half-lives of 8, 12, 16, and 20 years and pick whichever minimises average Brier score across both test seasons. One-liner to test:
-
-```bash
-python backtest.py --half-life 8
-python backtest.py --half-life 12
-# etc.
-```
-
-### Medium effort (a day each)
-
-**Tournament simulator**
-Simulate the entire WC 2026 bracket using Monte Carlo. The `simulate_match()` function in `math_engine.py` is already built for this. The remaining work is group-stage ranking logic (points → goal difference → goals scored → head-to-head) and knockout bracket generation. With 10,000 simulations you get stable champion probability estimates.
-
-**Team Analysis page**
-A second Streamlit page showing attack/defense rankings for all 48 WC 2026 teams, historical win rates, and a scatter plot of attack vs defense strength. Most of the data is already computed by `load_team_stats()`.
-
-**Enhanced validation page**
-Add calibration curves and reliability diagrams to the app using the existing `backtest.py` output. Lets a visitor understand the model's confidence properties visually.
-
-### Higher effort (several days)
-
-**Elo rating integration**
-Elo ratings capture recent form in a way that historical WC data alone can't — a team that won the World Cup last cycle should be treated differently from a team that hasn't qualified in 20 years. The cleanest integration is as a prior that modulates expected goals before the Poisson calculation:
-
-```python
-elo_factor = (team_elo / opponent_elo) ** 0.3  # tune the exponent
-lambda_adj = lambda_base * elo_factor
-```
-
-FIFA publishes official rankings; the [clubelo.com](http://clubelo.com) API provides historical Elo data for free.
-
-**Rolling out-of-sample validation**
-Instead of a single train/test split, run the backtest for every WC from 2002 onwards (training on all prior data each time) and plot accuracy, log-loss, and Brier score as a time series. Shows whether the model is improving as it sees more data, or whether the recent tactical evolution of football is making older data less useful.
-
+- [x] Historical World Cup prediction engine
+- [x] Recent international form engine
+- [x] Hybrid prediction model
+- [x] Competition weighting
+- [x] Exponential recency weighting
+- [x] Automated fixture ingestion
+- [x] Knockout stage support
+- [x] Team analytics dashboard
+- [x] Statistical backtesting
+- [x] Eastern Time fixture conversion
+- [x] Interactive Streamlit dashboard
 ---
+# Version History
+
+## Version 1
+
+- Historical World Cup Poisson model
+- SQLite backend
+- Streamlit interface
+
+## Version 2
+
+- Hybrid statistical engine
+- 39,000+ international matches
+- Competition weighting
+- Exponential recency weighting
+- Fixture ingestion pipeline
+- Knockout stage support
+- Interactive analytics
+- Automated backtesting
+- Eastern Time conversion
+---
+# Version 3 Roadmap
+
+- Interactive knockout bracket
+- Automatic bracket progression
+- Monte Carlo tournament simulation
+- Elo integration
+- Bayesian rating system
+- Dixon-Coles draw correction
+- Prediction confidence metrics
+- Calibration plots
+- Team comparison dashboard
+- Live FIFA rankings
+- Squad valuation integration
+- Injury impact modelling
+- Live World Cup result ingestion
+- Rolling multi-World Cup validation
+---
+# Future Improvements
+
+Planned enhancements include:
+
+- Live fixture synchronization
+- Automatic tournament progression
+- Dynamic bracket visualization
+- Interactive team comparison
+- Prediction calibration dashboard
+- Monte Carlo tournament simulations
+- Elo + Poisson ensemble model
+- Bayesian strength updates
+- Advanced expected goals modelling
 
 ## Portfolio notes
 
