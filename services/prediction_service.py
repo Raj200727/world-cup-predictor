@@ -16,7 +16,7 @@ DB_PATH = Path("predictor.db")
 TRAIN_SEASONS = list(range(1930, 2023, 4))
 
 
-def load_stats(
+def load_team_stats(
     model: str = me.DEFAULT_MODEL,
 ) -> me.TeamStats:
     """
@@ -44,7 +44,7 @@ def predict_match(
     stats: me.TeamStats,
     home_team: str,
     away_team: str,
-):
+)-> me.MatchResult:
     """
     Run the prediction engine.
     """

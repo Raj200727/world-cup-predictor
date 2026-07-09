@@ -7,7 +7,7 @@ Sidebar controls and application settings.
 from __future__ import annotations
 
 import streamlit as st
-
+from components.layout import section
 import math_engine as me
 
 MODEL_OPTIONS = {
@@ -34,10 +34,7 @@ def render() -> tuple[str, dict]:
         Metadata describing the selected model.
     """
 
-    st.markdown(
-        '<div class="section-label">Prediction Model</div>',
-        unsafe_allow_html=True,
-    )
+    section("Prediction Model")
 
     selected_label = st.radio(
         "Prediction model",

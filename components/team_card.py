@@ -9,6 +9,7 @@ from __future__ import annotations
 import streamlit as st
 
 import math_engine as me
+from components.layout import section
 
 from assets.theme import (
     CLR_HOME,
@@ -42,59 +43,56 @@ def render_team_profile(
         )
 
     st.markdown(
-        f"""
-        <div class="stat-grid">
+    f"""
+    <div class="stat-grid">
 
-            <div class="stat-pill">
-                Atk <span>{rec.attack_strength:.2f}×</span>
-            </div>
+    <div class="stat-pill">
+    Atk <span>{rec.attack_strength:.2f}×</span>
+    </div>
 
-            <div class="stat-pill">
-                Def <span>{rec.defense_strength:.2f}×</span>
-            </div>
+    <div class="stat-pill">
+    Def <span>{rec.defense_strength:.2f}×</span>
+    </div>
 
-            <div class="stat-pill">
-                Avg scored <span>{rec.goals_scored:.2f}</span>
-            </div>
+    <div class="stat-pill">
+    Avg scored <span>{rec.goals_scored:.2f}</span>
+    </div>
 
-            <div class="stat-pill">
-                Avg conceded <span>{rec.goals_conceded:.2f}</span>
-            </div>
+    <div class="stat-pill">
+    Avg conceded <span>{rec.goals_conceded:.2f}</span>
+    </div>
 
-            <div class="stat-pill">
-                W% <span>{rec.win_rate:.0%}</span>
-            </div>
+    <div class="stat-pill">
+    W% <span>{rec.win_rate:.0%}</span>
+    </div>
 
-            <div class="stat-pill">
-                D% <span>{rec.draw_rate:.0%}</span>
-            </div>
+    <div class="stat-pill">
+    D% <span>{rec.draw_rate:.0%}</span>
+    </div>
 
-            <div class="stat-pill">
-                L% <span>{rec.loss_rate:.0%}</span>
-            </div>
+    <div class="stat-pill">
+    L% <span>{rec.loss_rate:.0%}</span>
+    </div>
 
-            <div class="stat-pill">
-                GP <span>{rec.matches}</span>
-            </div>
+    <div class="stat-pill">
+    GP <span>{rec.matches}</span>
+    </div>
 
-        </div>
-        """,
+    </div>
+    """,
         unsafe_allow_html=True,
     )
 
 
 def render(
     stats: me.TeamStats,
-    result,
+    result: me.MatchResult,
 ) -> None:
     """
     Render both team profile cards.
     """
 
-    st.markdown(
-        '<div class="section-label">Team Profiles</div>',
-        unsafe_allow_html=True,
-    )
+    section("Team Profiles")
 
     home_col, away_col = st.columns(2)
 

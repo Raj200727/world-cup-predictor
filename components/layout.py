@@ -8,12 +8,11 @@ from __future__ import annotations
 
 import streamlit as st
 
-import math_engine as me
 
 
 def render_footer(
-    model_info: dict,
-    stats: me.TeamStats,
+    model_metadata: dict,
+    team_count: int,
 ) -> None:
     """
     Render the application footer.
@@ -24,9 +23,9 @@ def render_footer(
             f'<div class="footer">'
             f'WC 2026 Predictor'
             f' &nbsp; · &nbsp; '
-            f'{model_info["label"]}'
+            f'{model_metadata["label"]}'
             f' &nbsp; · &nbsp; '
-            f'{len(me.available_teams(stats))} Teams'
+            f'{team_count} Teams'
             f'</div>'
         ),
         unsafe_allow_html=True,

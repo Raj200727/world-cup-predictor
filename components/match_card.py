@@ -6,10 +6,10 @@ Handles fixture selection and renders the selected match card.
 
 from __future__ import annotations
 
-from typing import Optional
 
 import streamlit as st
 
+from components.layout import section
 from components.utils import _format_date, _format_stage
 from assets.theme import CLR_MUTED
 
@@ -26,7 +26,7 @@ def _fixture_label(fixture: dict) -> str:
     )
 
 
-def render(
+def render_match_selector(
     fixtures: list[dict],
     all_teams: list[str],
 ) -> tuple[str, str, str, str]:
@@ -41,10 +41,8 @@ def render(
     fixture_stage
     """
 
-    st.markdown(
-        '<div class="section-label">Select Match</div>',
-        unsafe_allow_html=True,
-    )
+    
+    section("Select Match")
 
     if fixtures:
 
@@ -68,31 +66,32 @@ def render(
             selected_fixture.get("stage"),
             selected_fixture.get("group"),
         )
+        
+        html = f"""
+        <div class="fixture-card">
+        <div class="fixture-date">
+        {fixture_date}
+        </div>
 
-        st.markdown(
-            f"""
-            <div class="fixture-card">
+        <div class="fixture-matchup">
+        {home_team}
+        <span class="fixture-vs">vs</span>
+        {away_team}
+        </div>
+        """
 
-                <div class="fixture-date">
-                    {fixture_date}
-                </div>
+        if fixture_stage:
+            html += f"""
+        <div class="fixture-stage">
+        {fixture_stage}
+        </div>
+        """
 
-                <div class="fixture-matchup">
-                    {home_team}
-                    <span class="fixture-vs">vs</span>
-                    {away_team}
-                </div>
+        html += """
+        </div>
+        """
 
-                {
-                    f'<div class="fixture-stage">{fixture_stage}</div>'
-                    if fixture_stage
-                    else ""
-                }
-
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown(html, unsafe_allow_html=True)
 
     else:
 
@@ -149,6 +148,8 @@ def render(
         st.warning("Select two different teams.")
 
         st.stop()
+    
+    
 
     return (
         home_team,

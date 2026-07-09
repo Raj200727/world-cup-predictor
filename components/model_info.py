@@ -4,18 +4,12 @@ import streamlit as st
 
 import math_engine as me
 
-MODEL_OPTIONS = {
-    "Historical":            "historical",
-    "Recent Form":           "form",
-    "Hybrid (Recommended)":  "hybrid",
-}
-MODEL_OPTION_LABELS = list(MODEL_OPTIONS.keys())
-DEFAULT_MODEL_LABEL = "Hybrid (Recommended)"   # must match me.DEFAULT_MODEL == "hybrid"
+
 
 def render(
-    model_info: dict,
+    model_metadata: dict,
     result: me.MatchResult,
-    stats: me.TeamStats,
+    team_count: int,
 ) -> None:
     """
     Render model information and methodology.
@@ -24,7 +18,7 @@ def render(
     st.markdown(
         f'<div class="model-badge">'
         f'Prediction generated using '
-        f'<b>{model_info["label"]}</b>'
+        f'<b>{model_metadata["label"]}</b>'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -35,9 +29,9 @@ def render(
             f"""
 **Prediction generated using**
 
-**{model_info["label"]}**
+**{model_metadata["label"]}**
 
-{model_info["description"]}
+{model_metadata["description"]}
 
 ---
 
@@ -72,6 +66,6 @@ Extra time and penalty shootouts are excluded.
 ---
 
 Currently the selected model contains
-**{len(me.available_teams(stats))} teams**.
+**{team_count} teams**.
 """
         )
