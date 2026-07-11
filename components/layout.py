@@ -19,17 +19,17 @@ def render_footer(
     """
 
     st.markdown(
-        (
-            f'<div class="footer">'
-            f'WC 2026 Predictor'
-            f' &nbsp; · &nbsp; '
-            f'{model_metadata["label"]}'
-            f' &nbsp; · &nbsp; '
-            f'{team_count} Teams'
-            f'</div>'
-        ),
-        unsafe_allow_html=True,
-    )
+    f"""
+    <div class="footer">
+        World Cup Prediction Engine
+        &nbsp;&nbsp;•&nbsp;&nbsp;
+        {model_metadata["label"]}
+        &nbsp;&nbsp;•&nbsp;&nbsp;
+        {team_count} Teams
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 def section(title: str) -> None:
@@ -38,6 +38,10 @@ def section(title: str) -> None:
     """
 
     st.markdown(
-        f'<div class="section-label">{title}</div>',
+        f"""
+        <div class="section-block">
+            <div class="section-label">{title}</div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )

@@ -21,9 +21,9 @@ def _fixture_label(fixture: dict) -> str:
     away = fixture["away_team_name"] or "TBD"
 
     return (
-        f"{home}  vs  {away}"
-        f"    [{_format_date(fixture['utc_date'])}]"
-    )
+    f"{home}  vs  {away}"
+    f"   |   {_format_date(fixture['utc_date'])}"
+)
 
 
 def render_match_selector(
@@ -42,20 +42,35 @@ def render_match_selector(
     """
 
     
-    section("Select Match")
+    section("Match Selection")
 
     if fixtures:
 
-        labels = [_fixture_label(f) for f in fixtures]
+        # -------------------------------------------------------
+        # Use bracket selection if available
+        # -------------------------------------------------------
 
-        selected_label = st.selectbox(
-            "Upcoming WC 2026 fixture",
-            options=labels,
-            index=0,
-            label_visibility="collapsed",
-        )
+        selected_fixture = None
 
-        selected_fixture = fixtures[labels.index(selected_label)]
+        if st.session_state.selected_match_id is not None:
+
+            for fixture in fixtures:
+
+                if fixture["match_id"] == st.session_state.selected_match_id:
+
+                    selected_fixture = fixture
+
+                    break
+
+        # -------------------------------------------------------
+        # Otherwise use the dropdown
+        # -------------------------------------------------------
+
+        if selected_fixture is None:
+
+            selected_fixture = fixtures[0]
+            
+            st.session_state.selected_match_id = selected_fixture["match_id"]
 
         home_team = selected_fixture["home_team_name"] or "TBD"
         away_team = selected_fixture["away_team_name"] or "TBD"
@@ -68,30 +83,43 @@ def render_match_selector(
         )
         
         html = f"""
-        <div class="fixture-card">
-        <div class="fixture-date">
-        {fixture_date}
-        </div>
+<div class="fixture-card">
 
-        <div class="fixture-matchup">
-        {home_team}
-        <span class="fixture-vs">vs</span>
-        {away_team}
-        </div>
-        """
+<div class="fixture-header">
 
-        if fixture_stage:
-            html += f"""
-        <div class="fixture-stage">
-        {fixture_stage}
-        </div>
-        """
+<div class="fixture-stage">
+{fixture_stage if fixture_stage else "International Fixture"}
+</div>
 
-        html += """
-        </div>
-        """
+<div class="fixture-date">
+{fixture_date}
+</div>
 
-        st.markdown(html, unsafe_allow_html=True)
+</div>
+<div class="fixture-divider"></div>
+<div class="fixture-match-row">
+
+<div class="fixture-team">
+{home_team}
+</div>
+
+<div class="fixture-vs">
+VS
+</div>
+
+<div class="fixture-team">
+{away_team}
+</div>
+
+</div>
+
+</div>
+"""
+
+        st.markdown(
+            html,
+            unsafe_allow_html=True,
+)
 
     else:
 

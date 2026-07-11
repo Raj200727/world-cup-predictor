@@ -23,10 +23,11 @@ from __future__ import annotations
 import streamlit as st
 
 from assets.css import inject_css
-
+from services import bracket_service
 from components import (
     hero,
     sidebar,
+    bracket,
     match_card,
     prediction_breakdown,
     team_card,
@@ -57,6 +58,12 @@ st.set_page_config(
 
 inject_css()
 
+# ------------------------------------------------------------------
+# Session State
+# ------------------------------------------------------------------
+
+if "selected_match_id" not in st.session_state:
+    st.session_state.selected_match_id = None
 
 def main():
 
@@ -67,11 +74,11 @@ def main():
     # ------------------------------------------------------------------
 
     hero.render()
-
+    
     # ------------------------------------------------------------------
     # Sidebar / Model Selection
     # ------------------------------------------------------------------
-
+    
     selected_model, model_metadata = sidebar.render()
 
     # ------------------------------------------------------------------
@@ -81,9 +88,15 @@ def main():
     stats = prediction_service.load_team_stats(selected_model)
 
     fixtures = fixture_service.load_fixtures()
+    bracket_data = bracket_service.build_bracket(fixtures)
     all_teams = prediction_service.available_teams(stats)
     team_count = len(all_teams)
 
+    # ------------------------------------------------------------------
+    # Tournament Bracket
+    # ------------------------------------------------------------------
+    if bracket_data:
+        bracket.render(bracket_data)
     # ------------------------------------------------------------------
     # Match Selection
     # ------------------------------------------------------------------

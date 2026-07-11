@@ -81,3 +81,13 @@ def get_fixture(match_id: int) -> dict | None:
             return fixture
 
     return None
+
+def load_stage(stage_name: str) -> list[dict]:
+
+    fixtures = load_fixtures()
+
+    return [
+        f
+        for f in fixtures
+        if (f.get("stage") or "").lower() == stage_name.lower()
+    ]
