@@ -732,6 +732,40 @@ def inject_css():
     inset: 0;
     z-index: 20;
 }}
+.prediction-header{{
+    text-align:center;
+    margin-bottom:1.5rem;
+}}
+
+.prediction-title{{
+    font-size:1.8rem;
+    font-weight:700;
+    color:#ffffff;
+}}
+
+.prediction-subtitle{{
+    margin-top:.35rem;
+    color:#8da59a;
+    font-size:.95rem;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+}}
+
+.prediction-callout{{
+    margin-top:1.5rem;
+    padding:1rem;
+    border-radius:14px;
+    text-align:center;
+    background:#123322;
+    border:1px solid rgba(255,255,255,.08);
+}}
+
+.prediction-callout strong{{
+    display:block;
+    margin:.35rem 0;
+    font-size:1.3rem;
+    color:white;
+}}
     /* ── Footer ── */
     .footer {{
 

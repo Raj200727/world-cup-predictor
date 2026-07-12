@@ -20,16 +20,35 @@ def render(
     result
         PredictionResult returned by math_engine.predict_match().
     """
+    st.markdown(
+        f"""
+<div class="prediction-header">
 
+<div class="prediction-title">
+{result.home_team} vs {result.away_team}
+</div>
+
+<div class="prediction-subtitle">
+Prediction Summary
+</div>
+
+</div>
+""",
+        unsafe_allow_html=True,
+    )
     st.markdown(
         """
 <div class="metric-row">
 
 <div class="metric-card home">
-<div class="metric-label">Home Win</div>
+<div class="metric-label">Win Probability</div>
 <div class="metric-team">{home}</div>
 <div class="metric-pct">{home_win}</div>
-<div class="metric-xg">xG {home_xg}</div>
+<div class="metric-xg">
+Expected Goals
+<br>
+<strong>{home_xg}</strong>
+</div>
 </div>
 
 <div class="metric-card draw">
@@ -40,10 +59,14 @@ def render(
 </div>
 
 <div class="metric-card away">
-<div class="metric-label">Away Win</div>
+<div class="metric-label">Win Probability</div>
 <div class="metric-team">{away}</div>
 <div class="metric-pct">{away_win}</div>
-<div class="metric-xg">xG {away_xg}</div>
+<div class="metric-xg">
+Expected Goals
+<br>
+<strong>{away_xg}</strong>
+</div>
 </div>
 
 </div>
@@ -56,5 +79,28 @@ def render(
             home_xg=f"{result.lambda_home:.2f}",
             away_xg=f"{result.lambda_away:.2f}",
         ),
+        unsafe_allow_html=True,
+    )
+
+    favorite = max(
+        [
+            (result.home_team, result.home_win_prob),
+            ("Draw", result.draw_prob),
+            (result.away_team, result.away_win_prob),
+        ],
+        key=lambda x: x[1],
+    )
+    st.markdown(
+        f"""
+<div class="prediction-callout">
+
+Prediction
+
+<strong>{favorite[0]}</strong>
+
+{favorite[1]:.0%} confidence
+
+</div>
+""",
         unsafe_allow_html=True,
     )
