@@ -67,6 +67,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from services.tournament_rating_service import (build_tournament_ratings,)
+from services.opponent_strength_service import (build_opponent_strength,get_opponent_strength,)
 import numpy as np
 from scipy.stats import poisson
 
@@ -1229,6 +1230,17 @@ def expected_goals(
     home  = get_team_stats(stats, home_team)
     away  = get_team_stats(stats, away_team)
 
+    strengths = build_opponent_strength()
+
+    home_strength = get_opponent_strength(
+        home_team,
+        strengths,
+    )
+
+    away_strength = get_opponent_strength(
+        away_team,
+        strengths,
+    )
     mu = glob.goals_scored   # global baseline
 
     λ_home = mu * home.attack_strength * away.defense_strength
@@ -1286,7 +1298,21 @@ def expected_goals(
     away_form_factor = 1.0 + (
         (away_live["form"] - 0.50) * 0.10
     )
+    OPPONENT_STRENGTH_WEIGHT = 0.08
 
+    home_opponent_factor = (
+        1.0 +
+        ((away_strength - 1.0) * OPPONENT_STRENGTH_WEIGHT)
+    )
+
+    away_opponent_factor = (
+        1.0 +
+        ((home_strength - 1.0) * OPPONENT_STRENGTH_WEIGHT)
+    )
+
+    λ_home *= home_opponent_factor
+    λ_away *= away_opponent_factor
+    
     λ_home *= (
         home_attack_factor *
         away_defense_factor *
@@ -1311,7 +1337,8 @@ def expected_goals(
     # Clamp to a sane range — prevents extreme λ from degenerate data
     λ_home = max(0.1, min(λ_home, 8.0))
     λ_away = max(0.1, min(λ_away, 8.0))
-
+    print(f"Home Strength : {home_strength:.3f}")
+    print(f"Away Strength : {away_strength:.3f}")
     return (
         λ_home,
         λ_away,
