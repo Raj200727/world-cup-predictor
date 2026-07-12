@@ -63,11 +63,7 @@ def render_match(match: dict) -> None:
             'UPCOMING'
             '</span>'
         )
-    if st.button(
-        f'{match["home_team_name"]} vs {match["away_team_name"]}',
-        key=f'bracket_{match["match_id"]}',
-        use_container_width=True,):
-        set_selected_match(match["match_id"])
+
     card_class = "bracket-card"
 
     if selected:
@@ -102,6 +98,12 @@ def render_match(match: dict) -> None:
     """,
                 unsafe_allow_html=True,
             ) 
+    if st.button(
+        f'{match["home_team_name"]} vs {match["away_team_name"]}',
+        key=f'bracket_{match["match_id"]}',
+        use_container_width=True,):
+        set_selected_match(match["match_id"])
+        
 def render_placeholder(
     team1: str,
     team2: str | None = None,

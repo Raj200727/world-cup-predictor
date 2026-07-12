@@ -719,6 +719,19 @@ def inject_css():
     justify-content: center;
     min-height: 420px;
 }}
+.bracket-click-area button {{
+    opacity: 0;
+    height: 0;
+    padding: 0;
+    margin: 0;
+    border: none;
+}}
+
+.bracket-click-area {{
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+}}
     /* ── Footer ── */
     .footer {{
 
