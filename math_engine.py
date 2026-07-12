@@ -66,7 +66,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-
+from services.tournament_rating_service import (build_tournament_ratings,)
 import numpy as np
 from scipy.stats import poisson
 
@@ -247,6 +247,11 @@ class MatchResult:
     away_win_prob:  float
     lambda_home:    float   # expected goals — home side
     lambda_away:    float   # expected goals — away side
+    historical_lambda_home: float
+    historical_lambda_away: float
+
+    live_adjustment_home: float
+    live_adjustment_away: float
     scorelines:     list[tuple[str, float]]   # top N "(h-a)", prob — sorted desc
     matrix:         np.ndarray                # full [MAX_GOALS+1 × MAX_GOALS+1] matrix
 
@@ -1205,6 +1210,8 @@ def expected_goals(
     stats: TeamStats,
     home_team: str,
     away_team: str,
+    home_live: dict | None = None,
+    away_live: dict | None = None,
 ) -> tuple[float, float]:
     """
     Compute expected goals (λ) for each side using the standard
@@ -1226,13 +1233,93 @@ def expected_goals(
 
     λ_home = mu * home.attack_strength * away.defense_strength
     λ_away = mu * away.attack_strength * home.defense_strength
+    
+    historical_lambda_home = (
+        mu *
+        home.attack_strength *
+        away.defense_strength
+    )
 
+    historical_lambda_away = (
+        mu *
+        away.attack_strength *
+        home.defense_strength
+    )
+
+    λ_home = historical_lambda_home
+    λ_away = historical_lambda_away
+
+    if home_live is None:
+        home_live = {
+            "attack": 0.50,
+            "defense": 0.50,
+            "form": 0.50,
+        }
+
+    if away_live is None:
+        away_live = {
+            "attack": 0.50,
+            "defense": 0.50,
+            "form": 0.50,
+        }
+
+    home_attack_factor = 1.0 + (
+        (home_live["attack"] - 0.50) * 0.12
+    )
+
+    away_attack_factor = 1.0 + (
+        (away_live["attack"] - 0.50) * 0.12
+    )
+
+    home_defense_factor = 1.0 - (
+        (home_live["defense"] - 0.50) * 0.08
+    )
+
+    away_defense_factor = 1.0 - (
+        (away_live["defense"] - 0.50) * 0.08
+    )
+
+    home_form_factor = 1.0 + (
+        (home_live["form"] - 0.50) * 0.10
+    )
+
+    away_form_factor = 1.0 + (
+        (away_live["form"] - 0.50) * 0.10
+    )
+
+    λ_home *= (
+        home_attack_factor *
+        away_defense_factor *
+        home_form_factor
+    )
+
+    λ_away *= (
+        away_attack_factor *
+        home_defense_factor *
+        away_form_factor
+    )
+    λ_home = max(0.1, min(λ_home, 8.0))
+    λ_away = max(0.1, min(λ_away, 8.0))
+
+    live_adjustment_home = (
+        λ_home / historical_lambda_home
+    )
+
+    live_adjustment_away = (
+        λ_away / historical_lambda_away
+    )
     # Clamp to a sane range — prevents extreme λ from degenerate data
     λ_home = max(0.1, min(λ_home, 8.0))
     λ_away = max(0.1, min(λ_away, 8.0))
 
-    return λ_home, λ_away
-
+    return (
+        λ_home,
+        λ_away,
+        historical_lambda_home,
+        historical_lambda_away,
+        live_adjustment_home,
+        live_adjustment_away,
+    )
 
 def scoreline_matrix(
     lambda_home: float,
@@ -1333,21 +1420,61 @@ def predict_match(
     -------
     MatchResult with probabilities, expected goals, and top scorelines
     """
-    λ_home, λ_away = expected_goals(stats, home_team, away_team)
+    tournament_ratings = build_tournament_ratings()
+
+    home_live = tournament_ratings.get(
+        home_team,
+        {"overall": 0.50},
+    )
+
+    away_live = tournament_ratings.get(
+        away_team,
+        {"overall": 0.50},
+    )
+    (
+    λ_home,
+    λ_away,
+    historical_home,
+    historical_away,
+    home_adjustment,
+    away_adjustment,
+) = expected_goals(
+    stats,
+    home_team,
+    away_team,
+    home_live,
+    away_live,
+)
+    print("\n==============================")
+    print(f"{home_team} vs {away_team}")
+    print("------------------------------")
+    print(f"Historical λ : {historical_home:.3f} | {historical_away:.3f}")
+    print(f"Adjustment   : {home_adjustment:.3f} | {away_adjustment:.3f}")
+    print(f"Final λ      : {λ_home:.3f} | {λ_away:.3f}")
+    print("==============================")
     matrix         = scoreline_matrix(λ_home, λ_away, max_goals)
     hw, d, aw      = match_probabilities(matrix)
     scorelines     = _top_scorelines(matrix, home_team, away_team)
 
     return MatchResult(
-        home_team     = _normalise(home_team),
-        away_team     = _normalise(away_team),
-        home_win_prob = hw,
-        draw_prob     = d,
-        away_win_prob = aw,
-        lambda_home   = λ_home,
-        lambda_away   = λ_away,
-        scorelines    = scorelines,
-        matrix        = matrix,
+        home_team=_normalise(home_team),
+        away_team=_normalise(away_team),
+
+        home_win_prob=hw,
+        draw_prob=d,
+        away_win_prob=aw,
+
+        lambda_home=λ_home,
+        lambda_away=λ_away,
+
+        historical_lambda_home=historical_home,
+        historical_lambda_away=historical_away,
+
+        live_adjustment_home=home_adjustment,
+        live_adjustment_away=away_adjustment,
+
+        scorelines=scorelines,
+        matrix=matrix,
     )
 
 
