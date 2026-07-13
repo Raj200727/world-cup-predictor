@@ -491,20 +491,21 @@ def inject_css():
 
 .bracket-title {{
     font-family: 'Space Grotesk', sans-serif;
-    font-size: 1.65rem;
+    font-size: 2rem;
     font-weight: 700;
     color: {CLR_TEXT};
     margin-top: 1.2rem;
-    margin-bottom: 1.35rem;
+    margin-bottom: 2rem;
     letter-spacing: -.4px;
 }}
 
 .bracket-card {{
     background: {CLR_SURFACE};
     border: 1px solid {CLR_BORDER};
-    border-radius: 18px;
-    padding: 1.4rem;
-    margin-bottom: 1rem;
+    padding: 1.25rem;
+    margin-bottom: 1.0rem;
+    border-radius: 22px;
+    min-height: 115px;
     box-shadow:
         0 8px 22px rgba(0,0,0,.16),
         0 1px 0 rgba(255,255,255,.03) inset;
@@ -512,6 +513,26 @@ def inject_css():
         transform .2s ease,
         box-shadow .2s ease,
         border .2s ease;
+}}
+
+.bracket-quarter{{
+    min-height:220px;
+}}
+
+.bracket-semi{{
+    min-height:290px;
+    width:108%;
+    margin-left:-4%;
+}}
+
+.bracket-final{{
+    min-height:340px;
+    width:115%;
+    margin-left:-7.5%;
+}}
+
+.bracket-third{{
+    min-height:300px;
 }}
 
 .bracket-card:hover {{
@@ -524,13 +545,13 @@ def inject_css():
 .bracket-header {{
     display: flex;
     justify-content: flex-end;
-    margin-bottom: 1rem;
+    margin-bottom: 1.4rem;
 }}
 
 .bracket-status {{
-    padding: .30rem .75rem;
     border-radius: 999px;
-    font-size: .75rem;
+    font-size:.82rem;
+    padding:.45rem .95rem;
     color: #b7c3d0;
     font-family: 'Space Mono', monospace;
     font-weight: 700;
@@ -549,18 +570,36 @@ def inject_css():
 }}
 
 .bracket-team {{
-    font-size: 1.08rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    font-size: 1.18rem;
     font-weight: 600;
     color: {CLR_TEXT};
-    padding: .35rem 0;
-    line-height: 1.4;
+
+    padding: .55rem 0;
+    line-height: 1.5;
+}}
+.bracket-flag {{
+    font-size: 1.7rem;
+    margin-right: .7rem;
+}}
+.bracket-team-name {{
+    display: flex;
+    align-items: center;
+    flex: 1;
 }}
 
 .bracket-team.winner {{
-    background: #1f2937;
+    background:linear-gradient(
+    90deg,
+    rgba(34,197,94,.18),
+    rgba(34,197,94,.05)
+    );
     color: #fff;
     font-weight: 700;
-    border-left: 5px solid #22c55e;
+    border-left: 6px solid #22c55e;
 }}
 
 .bracket-vs {{
@@ -569,7 +608,7 @@ def inject_css():
     letter-spacing: .22em;
     color: {CLR_MUTED};
     text-align: center;
-    margin: .65rem 0;
+    margin: 1rem 0;
 }}
 
 /* ── Tournament Bracket ───────────────────────── */
@@ -577,38 +616,28 @@ def inject_css():
 .bracket-layout {{
     display: flex;
     justify-content: space-between;
-    gap: 2rem;
-    margin: 2rem 0 3rem;
+    gap:6rem;
+    margin:3rem 0 4rem;
 }}
 
 .bracket-column {{
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 2rem;
 }}
 
 /* ── CHANGED: stage label uses margin-bottom:auto to push the card
       below it into the flex-centered position within the column. ── */
 .bracket-stage {{
     text-align: center;
-    font-size: 1rem;
+    font-size: 1.15rem;
+    letter-spacing:.12em;
+    padding-bottom:40px;
     font-weight: 700;
-    letter-spacing: .08em;
     text-transform: uppercase;
     margin-top: 0;
     margin-bottom: auto;
-    padding-bottom: 12px;
-}}
-
-.bracket-spacer {{
-    height: 48px;
-}}
-
-/* ── CHANGED: spacer-final eliminated — was adding dead space above Final card ── */
-.bracket-spacer-final {{
-    height: 0;
-    display: none;
 }}
 
 .bracket-connector {{
@@ -641,12 +670,15 @@ def inject_css():
 .bracket-card-selected {{
     border: 2px solid #4da3ff;
     box-shadow: 0 0 18px rgba(77,163,255,.45);
-    transform: scale(1.02);
+    transform:
+    translateY(-3px)
+    scale(1.02);
 }}
 
 .score {{
     float: right;
-    font-weight: 700;
+    font-size:1.3rem;
+    font-weight:800;
 }}
 
 .bracket-team.selected {{
@@ -654,71 +686,6 @@ def inject_css():
     font-weight: 700;
 }}
 
-/* ==========================================
-   Bracket Connectors
-   CHANGED: all three connector divs zeroed out.
-   Their Python render calls are preserved so no Python changes needed.
-   The fixed pixel heights (90px, 90px, 130px) were misaligning SF and
-   Final cards by pushing them below the QF pair midpoints.
-   Accurate line connectors require JS-measured element positions
-   which are not available in Streamlit's static render model.
-========================================== */
-
-.bracket-connector-left {{
-    height: 0;
-    overflow: hidden;
-    visibility: hidden;
-}}
-
-.bracket-connector-right {{
-    height: 0;
-    overflow: hidden;
-    visibility: hidden;
-}}
-
-.bracket-connector-final {{
-    height: 0;
-    overflow: hidden;
-    visibility: hidden;
-}}
-
-/* ==========================================
-   Bracket column vertical alignment
-   CHANGED: uses CSS :has() to target the Streamlit column container
-   that holds each connector div, then applies flex-column centering.
-   This centers the SF card between the two QF cards and the Final card
-   between both SF cards — without touching any Python logic.
-
-   :has() is supported in all modern browsers (Chrome 105+, Safari 15.4+,
-   Firefox 121+). Streamlit's iframe-rendered UI targets these browsers.
-========================================== */
-
-/* Left SF column — identified by the bracket-connector-left div it contains */
-.stVerticalBlock:has(.bracket-connector-left) {{
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: center;
-    min-height: 420px;
-}}
-
-/* Right SF column — identified by the bracket-connector-right div it contains */
-.stVerticalBlock:has(.bracket-connector-right) {{
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: center;
-    min-height: 420px;
-}}
-
-/* Final column — identified by the bracket-connector-final div it contains */
-.stVerticalBlock:has(.bracket-connector-final) {{
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: center;
-    min-height: 420px;
-}}
 .bracket-click-area button {{
     opacity: 0;
     height: 0;
@@ -732,6 +699,20 @@ def inject_css():
     inset: 0;
     z-index: 20;
 }}
+.sf-slot{{
+    margin-top:90px;
+}}
+
+.final-slot{{
+    margin-top:20px;
+    margin-bottom:55px;
+}}
+
+.third-slot{{
+    margin-top:40px;
+}}
+/*Prediction section
+*/
 .prediction-header{{
     text-align:center;
     margin-bottom:1.5rem;
@@ -765,6 +746,120 @@ def inject_css():
     margin:.35rem 0;
     font-size:1.3rem;
     color:white;
+}}
+.qf-left,
+.qf-right,
+.sf-left,
+.sf-right,
+.final-column{{
+    position:relative;
+}}
+.qf-left::after{{
+    content:"";
+    position:absolute;
+
+    top:50%;
+    right:-42px;
+
+    width:42px;
+    height:2px;
+
+    background:#35584A;
+}}
+.qf-right::before{{
+    content:"";
+
+    position:absolute;
+
+    top:50%;
+    left:-42px;
+
+    width:42px;
+    height:2px;
+
+    background:#35584A;
+}}
+.qf-left::before{{
+    content:"";
+
+    position:absolute;
+
+    right:-42px;
+
+    top:22%;
+
+    width:2px;
+    height:56%;
+
+    background:#35584A;
+}}
+.qf-right::after{{
+    content:"";
+
+    position:absolute;
+
+    left:-42px;
+
+    top:22%;
+
+    width:2px;
+    height:56%;
+
+    background:#35584A;
+}}
+.sf-left::after{{
+    content:"";
+
+    position:absolute;
+
+    top:50%;
+    right:-55px;
+
+    width:55px;
+    height:2px;
+
+    background:#35584A;
+}}
+.sf-right::before{{
+    content:"";
+
+    position:absolute;
+
+    top:50%;
+    left:-55px;
+
+    width:55px;
+    height:2px;
+
+    background:#35584A;
+}}
+.final-column::before{{
+    content:"";
+
+    position:absolute;
+
+    left:-55px;
+
+    top:50%;
+
+    width:55px;
+    height:3px;
+
+    background:#B9FF37;
+}}
+.final-column::after{{
+    content:"";
+
+    position:absolute;
+
+    right:-55px;
+
+    top:50%;
+
+    width:55px;
+    height:3px;
+
+    background:#B9FF37;
 }}
     /* ── Footer ── */
     .footer {{

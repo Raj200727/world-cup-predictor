@@ -11,7 +11,10 @@ from datetime import datetime
 from components.clickable_card import set_selected_match
 from assets.flags import FLAGS
 
-def render_match(match: dict) -> None:
+def render_match(
+    match: dict,
+    size: str = "normal",
+) -> None:
     winner = get_winner(match)
     played = match["status"] == "FINISHED"
     selected = (st.session_state.selected_match_id == match["match_id"])
@@ -64,16 +67,46 @@ def render_match(match: dict) -> None:
             '</span>'
         )
 
-    card_class = "bracket-card"
+    card_class = f"bracket-card bracket-{size}"
 
     if selected:
         card_class += " bracket-card-selected"
+
     if played and home_score is not None and away_score is not None:
-        home_display = f"{home_flag} {match['home_team_name']} <span class='score'>{home_score}</span>"
-        away_display = f"{away_flag} {match['away_team_name']} <span class='score'>{away_score}</span>"
+
+        home_display = f"""
+    <div class="bracket-team-name">
+        <span class="bracket-flag">{home_flag}</span>
+        <span>{match['home_team_name']}</span>
+    </div>
+
+    <span class="score">{home_score}</span>
+    """
+
+        away_display = f"""
+    <div class="bracket-team-name">
+        <span class="bracket-flag">{away_flag}</span>
+        <span>{match['away_team_name']}</span>
+    </div>
+
+    <span class="score">{away_score}</span>
+    """
+
     else:
-        home_display = f"{home_flag} {match['home_team_name']}"
-        away_display = f"{away_flag} {match['away_team_name']}"
+
+        home_display = f"""
+    <div class="bracket-team-name">
+        <span class="bracket-flag">{home_flag}</span>
+        <span>{match['home_team_name']}</span>
+    </div>
+    """
+
+        away_display = f"""
+    <div class="bracket-team-name">
+        <span class="bracket-flag">{away_flag}</span>
+        <span>{match['away_team_name']}</span>
+    </div>
+    """
     st.markdown(
                 f"""
     <div class="{card_class}">
@@ -183,13 +216,17 @@ def render(
         if final
         else None
     )
+    third_place = bracket["third_place"]
+
+    third_place_match = (
+        third_place[0]
+        if third_place
+        else None
+    )
     st.markdown(
         '<div class="bracket-title">Tournament Bracket</div>',
         unsafe_allow_html=True,
     )
-
-    left_matches = quarterfinals[:2]
-    right_matches = quarterfinals[2:]
 
     left_qf_winner = (
         get_winner(quarterfinals[0])
@@ -214,68 +251,6 @@ def render(
         if len(quarterfinals) > 3
         else None
     )
-    
-    # Five columns: QF | left SF | Final | right SF | QF
-    # Ratios are symmetric around the center Final column so the bracket
-    # mirrors correctly. The spacer-large div and top_sf/bottom_sf container
-    # pattern are no longer needed — each SF now owns its own column.
-    col1, col2, col3, col4, col5 = st.columns(
-        [4.5, 2.4, 1.3, 2.4, 4.5],
-        vertical_alignment="center",
-    )
-
-
-    with col1:
-        for match in left_matches:
-            render_match(match)
-
-    with col2:
-
-        st.markdown(
-            '<div class="bracket-stage">Semi Finals</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            '<div class="bracket-connector-left"></div>',
-            unsafe_allow_html=True,
-        )
-        if left_semifinal:
-            render_match(left_semifinal)
-
-        elif left_qf_winner and right_qf_winner:
-
-            render_placeholder(
-    f'{FLAGS.get(left_qf_winner,"🏳")} {left_qf_winner}',
-    f'{FLAGS.get(right_qf_winner,"🏳")} {right_qf_winner}',
-)
-
-        else:
-
-            render_placeholder("TBD")
-
-    with col4:
-
-        st.markdown(
-            '<div class="bracket-stage">Semi Finals</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            '<div class="bracket-connector-right"></div>',
-            unsafe_allow_html=True,
-        )
-        if right_semifinal:
-            render_match(right_semifinal)
-
-        elif left_qf2_winner and right_qf2_winner:
-
-            render_placeholder(
-    f'{FLAGS.get(left_qf2_winner,"🏳")} {left_qf2_winner}',
-    f'{FLAGS.get(right_qf2_winner,"🏳")} {right_qf2_winner}',
-)
-
-        else:
-
-            render_placeholder("TBD")
     left_sf_winner = (
         get_winner(semifinals[0])
         if len(semifinals) > 0
@@ -287,33 +262,159 @@ def render(
         if len(semifinals) > 1
         else None
     )
-    with col3:
 
+    left_sf_loser = None
+    right_sf_loser = None
+
+    if len(semifinals) > 0:
+
+        winner = get_winner(semifinals[0])
+
+        if winner == semifinals[0]["home_team_name"]:
+            left_sf_loser = semifinals[0]["away_team_name"]
+
+        elif winner == semifinals[0]["away_team_name"]:
+            left_sf_loser = semifinals[0]["home_team_name"]
+
+    if len(semifinals) > 1:
+
+        winner = get_winner(semifinals[1])
+
+        if winner == semifinals[1]["home_team_name"]:
+            right_sf_loser = semifinals[1]["away_team_name"]
+
+        elif winner == semifinals[1]["away_team_name"]:
+            right_sf_loser = semifinals[1]["home_team_name"]
+    bracket_container = st.container()
+
+    with bracket_container:
+
+        _, final_col, _ = st.columns([1.5, 6, 1.5])
+        with final_col:
+
+            st.markdown(
+                '<div class="bracket-stage">Final</div>',
+                unsafe_allow_html=True,
+            )
+
+            if final_match:
+                render_match(final_match, "final")
+
+            elif left_sf_winner and right_sf_winner:
+
+                render_placeholder(
+        f'{FLAGS.get(left_sf_winner,"🏳")} {left_sf_winner}',
+        f'{FLAGS.get(right_sf_winner,"🏳")} {right_sf_winner}',
+    )
+            else:
+                render_placeholder("🏆 TBD")
         st.markdown(
-            '<div class="bracket-stage">Final</div>',
-            unsafe_allow_html=True,
-        )
-
-        st.markdown(
-            '<div class="bracket-spacer-final"></div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            '<div class="bracket-connector-final"></div>',
-            unsafe_allow_html=True,
-        )
-        if final_match:
-            render_match(final_match)
-
-        elif left_sf_winner and right_sf_winner:
-
-            render_placeholder(
-    f'{FLAGS.get(left_sf_winner,"🏳")} {left_sf_winner}',
-    f'{FLAGS.get(right_sf_winner,"🏳")} {right_sf_winner}',
+    "<div style='height:50px'></div>",
+    unsafe_allow_html=True,
 )
-        else:
-            render_placeholder("🏆 TBD")
-   
-    with col5:
-        for match in right_matches:
-            render_match(match)
+        sf_left_col, sf_right_col = st.columns(2)
+        with sf_left_col:
+
+            st.markdown(
+                '<div class="bracket-stage">Semi Finals</div>',
+                unsafe_allow_html=True,
+            )
+            if left_semifinal:
+                render_match(left_semifinal, "semi")
+
+            elif left_qf_winner and right_qf_winner:
+
+                render_placeholder(
+        f'{FLAGS.get(left_qf_winner,"🏳")} {left_qf_winner}',
+        f'{FLAGS.get(right_qf_winner,"🏳")} {right_qf_winner}',
+    )
+
+            else:
+
+                render_placeholder("⚽ TBD")
+        with sf_right_col:
+
+            st.markdown(
+                '<div class="bracket-stage">Semi Finals</div>',
+                unsafe_allow_html=True,
+            )
+            if right_semifinal:
+                render_match(right_semifinal, "semi")
+
+            elif left_qf2_winner and right_qf2_winner:
+
+                render_placeholder(
+        f'{FLAGS.get(left_qf2_winner,"🏳")} {left_qf2_winner}',
+        f'{FLAGS.get(right_qf2_winner,"🏳")} {right_qf2_winner}',
+    )
+
+            else:
+
+                render_placeholder("⚽ TBD")
+        st.markdown(
+    "<div style='height:50px'></div>",
+    unsafe_allow_html=True,
+)
+        qf1, qf2, qf3, qf4 = st.columns(4)
+        with qf1:
+
+            if len(quarterfinals) > 0:
+
+                render_match(
+                    quarterfinals[0],
+                    "quarter",
+                )
+        with qf2:
+
+            if len(quarterfinals) > 1:
+
+                render_match(
+                    quarterfinals[1],
+                    "quarter",
+                )
+        with qf3:
+
+            if len(quarterfinals) > 2:
+
+                render_match(
+                    quarterfinals[2],
+                    "quarter",
+                )
+        with qf4:
+
+            if len(quarterfinals) > 3:
+
+                render_match(
+                    quarterfinals[3],
+                    "quarter",
+                )
+        st.markdown(
+    "<div style='height:50px'></div>",
+    unsafe_allow_html=True,
+)
+        _, third_col, _ = st.columns([2, 5, 2])
+
+        with third_col:
+
+            st.markdown(
+                '<div class="bracket-stage">Third Place Match</div>',
+                unsafe_allow_html=True,
+            )
+
+            if third_place_match:
+
+                render_match(
+                    third_place_match,
+                    "third",
+                )
+
+            elif left_sf_loser and right_sf_loser:
+
+                render_placeholder(
+                    f'{FLAGS.get(left_sf_loser,"🏳")} {left_sf_loser}',
+                    f'{FLAGS.get(right_sf_loser,"🏳")} {right_sf_loser}',
+                )
+
+            else:
+
+                render_placeholder("🥉 TBD")
