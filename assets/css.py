@@ -507,7 +507,6 @@ def inject_css():
         color: #e2e8f0;
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
         transition: all 0.2s ease-in-out;
-        cursor: pointer;
 }}
 /* ── SVG Connector Bridges ───────────────────── */
 
@@ -595,8 +594,8 @@ def inject_css():
 }}
 
 .bracket-card:hover {{
-    border-color: #ffd700 !important;
-        box-shadow: 0 0 15px rgba(255, 215, 0, 0.3) !important;
+    border-color: #274734;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
         transform: translateY(-2px);
 }}
 
@@ -799,23 +798,12 @@ def inject_css():
     /* ── THE GRAND FINAL CARD ── */
     /* Overrides the base card styling to make the championship match massive and glowing */
     .bracket-card.bracket-final {{
-        border: 2px solid #ffd700;
-        box-shadow: 0 0 20px rgba(255, 215, 0, 0.15);
-        padding: 20px;
-        background: linear-gradient(145deg, #0d1a13 0%, #050a07 100%);
-        /* Flexbox allows us to control the exact gap between card and button */
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
+        border: 2px solid #ffd700; /* Premium Gold Border */
+        box-shadow: 0 0 25px rgba(255, 215, 0, 0.25); /* Subtle Gold Glow */
+        padding: 22px 15px; /* Physically larger padding */
+        background: linear-gradient(145deg, #0d1a13 0%, #050a07 100%); /* Darker core to make text pop */
     }}
-    div[data-testid="stButton"] button[key="bracket_final"] {{
-        margin-top: 8px !important; /* Forces exactly 8px of clean air */
-        background-color: rgba(255, 255, 255, 0.05) !important;
-        border: 1px solid rgba(255, 215, 0, 0.3) !important;
-        color: #ffd700 !important;
-        font-size: 0.75rem;
-        letter-spacing: 0.1em;
-    }}
+    
     .bracket-card.bracket-final .bracket-team-name {{
         font-size: 1.15rem; /* Larger team names */
         font-weight: 700;
@@ -824,14 +812,6 @@ def inject_css():
     .bracket-card.bracket-final .bracket-header {{
         font-size: 0.85rem; /* Larger top badge */
         margin-bottom: 12px;
-    }}
-    /* ── GLOBAL SPACING KILLER ── */
-    div[data-testid="stVerticalBlock"] {{
-        gap: 0px !important;
-    }}
-    div[data-testid="stVerticalBlock"] > div {{
-        padding-top: 0px !important-
-        padding-bottom: 0px !important;
     }}
 /*Prediction section
 */

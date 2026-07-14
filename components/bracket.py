@@ -319,14 +319,7 @@ def render(
         elif winner == semifinals[1]["away_team_name"]:
             right_sf_loser = semifinals[1]["home_team_name"]
     bracket_container = st.container()
-    st.markdown("""
-        <style>
-        div[data-testid="stVerticalBlock"] > div:has(div.bracket-bridge) {
-            margin-top: -10px !important;
-            margin-bottom: -10px !important;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+
     with bracket_container:
         st.markdown(
     '<div class="bracket-final-row">',
@@ -337,6 +330,7 @@ def render(
         with final_col:
             if final_match:
                 render_match(final_match, "final")
+
             elif left_sf_winner and right_sf_winner:
                 render_placeholder(
                     f'{FLAGS.get(left_sf_winner,"🏳")} {left_sf_winner}',
@@ -352,6 +346,7 @@ def render(
             ), 
             unsafe_allow_html=True
         )
+
         st.markdown(
     '<div class="bracket-semi-row">',
     unsafe_allow_html=True,
@@ -395,6 +390,7 @@ def render(
             ), 
             unsafe_allow_html=True
         )
+
         st.markdown(
     '<div class="bracket-quarter-row">',
     unsafe_allow_html=True,
