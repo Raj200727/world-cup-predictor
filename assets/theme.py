@@ -1,10 +1,11 @@
-CLR_BG          = "#0D1F17"
-CLR_SURFACE     = "#132B1E"
-CLR_BORDER      = "#1F3D2B"
-CLR_ACCENT      = "#D4F13A"
-CLR_TEXT        = "#E8F5E9"
-CLR_MUTED       = "#6B8F77"
-CLR_HOME        = "#D4F13A"   # acid yellow  — home team
-CLR_DRAW        = "#4A9B6F"   # mid green    — draw
-CLR_AWAY        = "#1A6B42"   # deep green   — away team
-CLR_SCORELINE   = "#2ECC71"   # bright green — scoreline bars
+CLR_BG = "#0D0E10"       # Premium Deep Obsidian
+CLR_SURFACE = "#1A1C20"  # Matte Charcoal Card Surface
+CLR_BORDER = "#2D3139"   # Subtle Slate Border
+CLR_TEXT = "#FFFFFF"     # High-Contrast Pure White
+CLR_MUTED = "#8A92A6"    # Steel Muted Text
+CLR_ACCENT = "#D4AF37"   # Champion Metallic Gold
+
+# Match outcome accents
+CLR_HOME = "#E5C158"     # Soft Gold Accent
+CLR_DRAW = "#4A4F5D"     # Slate Gray
+CLR_AWAY = "#C5A059"     # Champagne Gold Accent

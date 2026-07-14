@@ -514,25 +514,93 @@ def inject_css():
         box-shadow .2s ease,
         border .2s ease;
 }}
+/* ── SVG Connector Bridges ───────────────────── */
 
+/* Each bracket row must be position:relative so the absolute
+   SVG bridge anchors to it and overflows into the gap below. */
+.bracket-final-row,
+.bracket-semi-row,
+.bracket-quarter-row {{
+    position: relative;
+    overflow: visible;          /* allow SVG to overflow into the gap below */
+}}
+
+/* The bridge container — sits between rows, fills the margin-bottom gap */
+.bracket-bridge {{
+    width: 100%;
+    height: 90px;               /* matches margin-bottom on .bracket-*-row */
+    display: block;
+    pointer-events: none;       /* never intercepts clicks */
+    position: relative;
+    z-index: 0;
+    margin-top: -90px;          /* pull upward to sit in the existing gap,
+                                   not add height of its own */
+    overflow: visible;
+}}
+
+.bracket-bridge svg {{
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    display: block;
+}}
+
+/* Cards must float above the SVG lines */
+.bracket-card {{
+    position: relative;
+    z-index: 2;
+}}
+
+/* SVG path styling */
+.connector-path {{
+    fill: none;
+    stroke: {CLR_BORDER};
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.7;
+    transition: stroke 0.3s ease, opacity 0.3s ease;
+}}
+
+/* Accent connector — Final to Semi lines get the accent color */
+.connector-path.accent {{
+    stroke: {CLR_ACCENT};
+    opacity: 0.35;
+    stroke-width: 2.5;
+}}
 .bracket-quarter{{
-    min-height:220px;
+    max-width: 330px;
+    margin: 0 auto;
 }}
 
 .bracket-semi{{
-    min-height:290px;
-    width:108%;
-    margin-left:-4%;
+    max-width: 500px;
+    margin: 0 auto;
 }}
 
 .bracket-final{{
-    min-height:340px;
-    width:115%;
-    margin-left:-7.5%;
+    max-width: 720px;
+    margin: 0 auto 80px auto;
 }}
 
 .bracket-third{{
-    min-height:300px;
+    max-width: 520px;
+    margin: 0 auto;
+}}
+.bracket-final-row{{
+    margin-bottom:90px;
+}}
+
+.bracket-semi-row{{
+    margin-bottom:90px;
+}}
+
+.bracket-quarter-row{{
+    margin-bottom:110px;
+}}
+
+.bracket-third-row{{
+    margin-top:30px;
 }}
 
 .bracket-card:hover {{
@@ -637,7 +705,7 @@ def inject_css():
     font-weight: 700;
     text-transform: uppercase;
     margin-top: 0;
-    margin-bottom: auto;
+    margin-bottom: 24px;
 }}
 
 .bracket-connector {{
@@ -754,112 +822,31 @@ def inject_css():
 .final-column{{
     position:relative;
 }}
-.qf-left::after{{
-    content:"";
-    position:absolute;
+/* Add this to your css.py injected string */
 
-    top:50%;
-    right:-42px;
-
-    width:42px;
-    height:2px;
-
-    background:#35584A;
+/* The relative wrapper for the whole bracket */
+.bracket-wrapper {{
+    position: relative;
+    width: 100%;
+    margin: 2rem 0;
 }}
-.qf-right::before{{
-    content:"";
 
-    position:absolute;
-
-    top:50%;
-    left:-42px;
-
-    width:42px;
-    height:2px;
-
-    background:#35584A;
+/* The SVG canvas locked behind the columns */
+.bracket-svg-canvas {{
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0; 
+    pointer-events: none; /* Lets you click the cards through the SVG */
 }}
-.qf-left::before{{
-    content:"";
 
-    position:absolute;
-
-    right:-42px;
-
-    top:22%;
-
-    width:2px;
-    height:56%;
-
-    background:#35584A;
-}}
-.qf-right::after{{
-    content:"";
-
-    position:absolute;
-
-    left:-42px;
-
-    top:22%;
-
-    width:2px;
-    height:56%;
-
-    background:#35584A;
-}}
-.sf-left::after{{
-    content:"";
-
-    position:absolute;
-
-    top:50%;
-    right:-55px;
-
-    width:55px;
-    height:2px;
-
-    background:#35584A;
-}}
-.sf-right::before{{
-    content:"";
-
-    position:absolute;
-
-    top:50%;
-    left:-55px;
-
-    width:55px;
-    height:2px;
-
-    background:#35584A;
-}}
-.final-column::before{{
-    content:"";
-
-    position:absolute;
-
-    left:-55px;
-
-    top:50%;
-
-    width:55px;
-    height:3px;
-
-    background:#B9FF37;
-}}
-.final-column::after{{
-    content:"";
-
-    position:absolute;
-
-    right:-55px;
-
-    top:50%;
-
-    width:55px;
-    height:3px;
-
-    background:#B9FF37;
+/* Ensure cards float above the lines */
+.bracket-card {{
+    position: relative;
+    z-index: 2;
+    /* ... keep your existing background/border styles here ... */
 }}
     /* ── Footer ── */
     .footer {{

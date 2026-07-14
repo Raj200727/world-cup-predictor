@@ -192,7 +192,63 @@ def get_winner(match: dict) -> str | None:
         return match["away_team_name"]
 
     return None
-      
+def _svg_bridge_final_to_semi() -> str:
+    """
+    SVG connector between the Final row (top) and the Semi-Final row (below).
+
+    Coordinate system: viewBox "0 0 1000 90"
+      x=0 is left edge of the container, x=1000 is right edge.
+      y=0 is the bottom of the Final row, y=90 is the top of the Semi row.
+
+    Column positions (derived from st.columns proportions):
+      Final card center:  x = 500  (50% — it's in a [1.5, 6, 1.5] layout, center col)
+      Left SF center:     x = 222  (22.2% — [1, 0.25, 1] layout, left col center)
+      Right SF center:    x = 778  (77.8% — [1, 0.25, 1] layout, right col center)
+
+    Each path is an orthogonal elbow: straight down, then horizontal.
+    The horizontal joint sits at y=45 (midpoint of the 90px gap).
+    """
+    return """
+<div class="bracket-bridge">
+<svg viewBox="0 0 1000 90" preserveAspectRatio="none"
+     xmlns="http://www.w3.org/2000/svg">
+
+  <!-- Final center → Left SF: down from 500, elbow at y=45, across to 222, then down -->
+  <path class="connector-path accent"
+        d="M 500,0 L 500,45 L 222,45 L 222,90" />
+
+  <!-- Final center → Right SF: down from 500, elbow at y=45, across to 778, then down -->
+  <path class="connector-path accent"
+        d="M 500,0 L 500,45 L 778,45 L 778,90" />
+
+</svg>
+</div>
+"""
+
+
+def _svg_bridge_final_to_semi() -> str:
+    # Accent gold lines for final stages
+    return """
+    <div style="width: 100%; height: 50px; margin: -15px 0;">
+        <svg viewBox="0 0 1000 60" preserveAspectRatio="none" style="width: 100%; height: 100%; display: block; overflow: visible;">
+            <path d="M 500,0 L 500,30 L 222,30 L 222,60" fill="none" stroke="#D4AF37" stroke-width="3" stroke-opacity="0.6" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M 500,0 L 500,30 L 778,30 L 778,60" fill="none" stroke="#D4AF37" stroke-width="3" stroke-opacity="0.6" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+    </div>
+    """
+
+def _svg_bridge_semi_to_qf() -> str:
+    # Set margin-bottom to a negative number to pull the next row UP
+    return """
+    <div style="width: 100%; height: 50px; margin: -20px 0 -40px 0; position: relative; z-index: 5;">
+        <svg viewBox="0 0 1000 50" preserveAspectRatio="none" style="width: 100%; height: 100%; display: block; overflow: visible;">
+            <path d="M 222,0 L 222,25 L 110,25 L 110,50" fill="none" stroke="#9CA3AF" stroke-width="3" stroke-dasharray="6,6" />
+            <path d="M 222,0 L 222,25 L 370,25 L 370,50" fill="none" stroke="#9CA3AF" stroke-width="3" stroke-dasharray="6,6" />
+            <path d="M 778,0 L 778,25 L 630,25 L 630,50" fill="none" stroke="#9CA3AF" stroke-width="3" stroke-dasharray="6,6" />
+            <path d="M 778,0 L 778,25 L 890,25 L 890,50" fill="none" stroke="#9CA3AF" stroke-width="3" stroke-dasharray="6,6" />
+        </svg>
+    </div>
+    """
 def render(
     bracket: dict[str, list[dict]],
 ) -> None:
@@ -288,7 +344,11 @@ def render(
     bracket_container = st.container()
 
     with bracket_container:
-
+        st.markdown(
+    '<div class="bracket-final-row">',
+    unsafe_allow_html=True,
+)
+        # ── 1. FINAL ROW ──
         _, final_col, _ = st.columns([1.5, 6, 1.5])
         with final_col:
 
@@ -308,11 +368,14 @@ def render(
     )
             else:
                 render_placeholder("🏆 TBD")
+        st.markdown(_svg_bridge_final_to_semi(), unsafe_allow_html=True)
+
         st.markdown(
-    "<div style='height:50px'></div>",
+    '<div class="bracket-semi-row">',
     unsafe_allow_html=True,
 )
-        sf_left_col, sf_right_col = st.columns(2)
+        # ── 2. SEMI FINALS ROW ──
+        sf_left_col, spacer, sf_right_col = st.columns([1, 0.25, 1])
         with sf_left_col:
 
             st.markdown(
@@ -351,8 +414,10 @@ def render(
             else:
 
                 render_placeholder("⚽ TBD")
+        st.markdown(_svg_bridge_semi_to_qf(), unsafe_allow_html=True)
+
         st.markdown(
-    "<div style='height:50px'></div>",
+    '<div class="bracket-quarter-row">',
     unsafe_allow_html=True,
 )
         qf1, qf2, qf3, qf4 = st.columns(4)
@@ -392,6 +457,16 @@ def render(
     "<div style='height:50px'></div>",
     unsafe_allow_html=True,
 )
+        st.markdown(
+    "</div>",
+    unsafe_allow_html=True,
+)
+        st.markdown("<div style='height:60px'></div>", unsafe_allow_html=True)
+        st.markdown(
+    '<div class="bracket-third-row">',
+    unsafe_allow_html=True,
+)
+        # ── 4. THIRD PLACE ROW ──
         _, third_col, _ = st.columns([2, 5, 2])
 
         with third_col:
@@ -418,3 +493,7 @@ def render(
             else:
 
                 render_placeholder("🥉 TBD")
+        st.markdown(
+            "</div>",
+            unsafe_allow_html=True,
+        )
