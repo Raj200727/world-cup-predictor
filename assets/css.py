@@ -500,19 +500,13 @@ def inject_css():
 }}
 
 .bracket-card {{
-    background: {CLR_SURFACE};
-    border: 1px solid {CLR_BORDER};
-    padding: 1.25rem;
-    margin-bottom: 1.0rem;
-    border-radius: 22px;
-    min-height: 115px;
-    box-shadow:
-        0 8px 22px rgba(0,0,0,.16),
-        0 1px 0 rgba(255,255,255,.03) inset;
-    transition:
-        transform .2s ease,
-        box-shadow .2s ease,
-        border .2s ease;
+    background: linear-gradient(145deg, #0d1a13 0%, #0a140f 100%); /* Deep forest green */
+        border: 1px solid #182e22;
+        border-radius: 12px;
+        padding: 12px;
+        color: #e2e8f0;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+        transition: all 0.2s ease-in-out;
 }}
 /* ── SVG Connector Bridges ───────────────────── */
 
@@ -528,14 +522,10 @@ def inject_css():
 /* The bridge container — sits between rows, fills the margin-bottom gap */
 .bracket-bridge {{
     width: 100%;
-    height: 90px;               /* matches margin-bottom on .bracket-*-row */
-    display: block;
-    pointer-events: none;       /* never intercepts clicks */
     position: relative;
-    z-index: 0;
-    margin-top: -90px;          /* pull upward to sit in the existing gap,
-                                   not add height of its own */
-    overflow: visible;
+    z-index: 1;
+    pointer-events: none;
+    margin: -15px 0;
 }}
 
 .bracket-bridge svg {{
@@ -604,16 +594,18 @@ def inject_css():
 }}
 
 .bracket-card:hover {{
-    border-color: {CLR_ACCENT};
-    box-shadow:
-        0 14px 34px rgba(0,0,0,.20),
-        0 1px 0 rgba(255,255,255,.03) inset;
+    border-color: #274734;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+        transform: translateY(-2px);
 }}
 
 .bracket-header {{
     display: flex;
-    justify-content: flex-end;
-    margin-bottom: 1.4rem;
+        justify-content: center;
+        margin-bottom: 8px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
 }}
 
 .bracket-status {{
@@ -628,26 +620,28 @@ def inject_css():
 }}
 
 .bracket-status.complete {{
-    background: rgba(34,197,94,.12);
-    color: #4ADE80;
+    color: #a0aec0; /* Muted gray for completed games */
+        background: rgba(160, 174, 192, 0.1);
+        padding: 2px 8px;
+        border-radius: 12px;
 }}
 
 .bracket-status.upcoming {{
-    background: rgba(245,158,11,.12);
-    color: #FBBF24;
+    color: #ffd700; /* Premium Gold */
+        background: rgba(255, 215, 0, 0.1);
+        padding: 2px 8px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 215, 0, 0.2);
 }}
 
 .bracket-team {{
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-
-    font-size: 1.18rem;
-    font-weight: 600;
-    color: {CLR_TEXT};
-
-    padding: .55rem 0;
-    line-height: 1.5;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px;
+        border-radius: 6px;
+        background: transparent;
+        transition: background 0.3s ease;
 }}
 .bracket-flag {{
     font-size: 1.7rem;
@@ -660,14 +654,10 @@ def inject_css():
 }}
 
 .bracket-team.winner {{
-    background:linear-gradient(
-    90deg,
-    rgba(34,197,94,.18),
-    rgba(34,197,94,.05)
-    );
-    color: #fff;
-    font-weight: 700;
-    border-left: 6px solid #22c55e;
+    color: #00ff66; /* Bright electric green */
+        font-weight: 700;
+        background: rgba(0, 255, 102, 0.05); /* Subtle glowing background */
+        border-left: 3px solid #00ff66; /* Anchor the winning side */
 }}
 
 .bracket-vs {{
@@ -779,6 +769,50 @@ def inject_css():
 .third-slot{{
     margin-top:40px;
 }}
+/* ──────────────────────────────────────────────
+       Phase 2G: Dynamic SVG Connectors (Flawless Scaling)
+    ────────────────────────────────────────────── */
+.bracket-bridge {{
+        margin: -15px 0; /* Pulls rows tightly together */
+        position: relative;
+        z-index: 1;
+}}
+    
+.connector-line {{
+        transition: stroke 0.3s ease, filter 0.3s ease;
+}}
+    
+    /* THE GLOWING PATH ACCENT - Applied directly to SVG */
+.connector-line.winner-path {{
+        stroke: #00ff66 !important;
+        filter: drop-shadow(0px 0px 8px rgba(0, 255, 102, 0.6));
+}}
+/* ── STREAMLIT BUTTON SQUISH ── */
+    /* Forces Streamlit's native buttons to hug the bottom of your HTML cards */
+    div[data-testid="stButton"] {{
+        margin-top: -12px !important;
+        position: relative;
+        z-index: 10;
+    }}
+
+    /* ── THE GRAND FINAL CARD ── */
+    /* Overrides the base card styling to make the championship match massive and glowing */
+    .bracket-card.bracket-final {{
+        border: 2px solid #ffd700; /* Premium Gold Border */
+        box-shadow: 0 0 25px rgba(255, 215, 0, 0.25); /* Subtle Gold Glow */
+        padding: 22px 15px; /* Physically larger padding */
+        background: linear-gradient(145deg, #0d1a13 0%, #050a07 100%); /* Darker core to make text pop */
+    }}
+    
+    .bracket-card.bracket-final .bracket-team-name {{
+        font-size: 1.15rem; /* Larger team names */
+        font-weight: 700;
+    }}
+    
+    .bracket-card.bracket-final .bracket-header {{
+        font-size: 0.85rem; /* Larger top badge */
+        margin-bottom: 12px;
+    }}
 /*Prediction section
 */
 .prediction-header{{
@@ -844,9 +878,17 @@ def inject_css():
 
 /* Ensure cards float above the lines */
 .bracket-card {{
-    position: relative;
-    z-index: 2;
-    /* ... keep your existing background/border styles here ... */
+    background: linear-gradient(145deg, #0d1a13 0%, #0a140f 100%);
+        border: 1px solid #182e22;
+        border-radius: 12px;
+        padding: 12px;
+        color: #e2e8f0;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+        transition: all 0.2s ease-in-out;
+        
+        /* ADD THESE TWO LINES */
+        position: relative; 
+        z-index: 10; /* Forces cards to float above the lines */
 }}
     /* ── Footer ── */
     .footer {{

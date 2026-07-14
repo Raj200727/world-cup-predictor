@@ -140,10 +140,11 @@ def render_match(
 def render_placeholder(
     team1: str,
     team2: str | None = None,
+    size: str = "normal"
 ) -> None:
 
     html = f"""
-<div class="bracket-card">
+<div class="bracket-card bracket-{size}">
 
 <div class="bracket-team">
 {team1}
@@ -151,7 +152,6 @@ def render_placeholder(
 """
 
     if team2:
-
         html += f"""
 <div class="bracket-vs">
 VS
@@ -191,62 +191,39 @@ def get_winner(match: dict) -> str | None:
     if away > home:
         return match["away_team_name"]
 
-    return None
-def _svg_bridge_final_to_semi() -> str:
+def _svg_bridge_final_to_semi(sf1_won: bool = False, sf2_won: bool = False) -> str:
     """
-    SVG connector between the Final row (top) and the Semi-Final row (below).
-
-    Coordinate system: viewBox "0 0 1000 90"
-      x=0 is left edge of the container, x=1000 is right edge.
-      y=0 is the bottom of the Final row, y=90 is the top of the Semi row.
-
-    Column positions (derived from st.columns proportions):
-      Final card center:  x = 500  (50% — it's in a [1.5, 6, 1.5] layout, center col)
-      Left SF center:     x = 222  (22.2% — [1, 0.25, 1] layout, left col center)
-      Right SF center:    x = 778  (77.8% — [1, 0.25, 1] layout, right col center)
-
-    Each path is an orthogonal elbow: straight down, then horizontal.
-    The horizontal joint sits at y=45 (midpoint of the 90px gap).
+    SVG connector dropping from Final to Semifinals, stretched to touch cards.
     """
-    return """
-<div class="bracket-bridge">
-<svg viewBox="0 0 1000 90" preserveAspectRatio="none"
-     xmlns="http://www.w3.org/2000/svg">
-
-  <!-- Final center → Left SF: down from 500, elbow at y=45, across to 222, then down -->
-  <path class="connector-path accent"
-        d="M 500,0 L 500,45 L 222,45 L 222,90" />
-
-  <!-- Final center → Right SF: down from 500, elbow at y=45, across to 778, then down -->
-  <path class="connector-path accent"
-        d="M 500,0 L 500,45 L 778,45 L 778,90" />
-
-</svg>
-</div>
-"""
-
-
-def _svg_bridge_final_to_semi() -> str:
-    # Accent gold lines for final stages
-    return """
-    <div style="width: 100%; height: 50px; margin: -15px 0;">
-        <svg viewBox="0 0 1000 60" preserveAspectRatio="none" style="width: 100%; height: 100%; display: block; overflow: visible;">
-            <path d="M 500,0 L 500,30 L 222,30 L 222,60" fill="none" stroke="#D4AF37" stroke-width="3" stroke-opacity="0.6" stroke-linecap="round" stroke-linejoin="round" />
-            <path d="M 500,0 L 500,30 L 778,30 L 778,60" fill="none" stroke="#D4AF37" stroke-width="3" stroke-opacity="0.6" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
+    s1_cls = "winner-path" if sf1_won else ""
+    s2_cls = "winner-path" if sf2_won else ""
+    
+    return f"""
+    <div class="bracket-bridge">
+    <svg viewBox="0 0 1000 100" preserveAspectRatio="none" style="width: 100%; height: 100px; overflow: visible;">
+        <path class="connector-line {s1_cls}" d="M 500,0 L 500,50 L 228,50 L 228,100" fill="none" stroke="#263238" stroke-width="3" />
+        <path class="connector-line {s2_cls}" d="M 500,0 L 500,50 L 772,50 L 772,100" fill="none" stroke="#263238" stroke-width="3" />
+    </svg>
     </div>
     """
 
-def _svg_bridge_semi_to_qf() -> str:
-    # Set margin-bottom to a negative number to pull the next row UP
-    return """
-    <div style="width: 100%; height: 50px; margin: -20px 0 -40px 0; position: relative; z-index: 5;">
-        <svg viewBox="0 0 1000 50" preserveAspectRatio="none" style="width: 100%; height: 100%; display: block; overflow: visible;">
-            <path d="M 222,0 L 222,25 L 110,25 L 110,50" fill="none" stroke="#9CA3AF" stroke-width="3" stroke-dasharray="6,6" />
-            <path d="M 222,0 L 222,25 L 370,25 L 370,50" fill="none" stroke="#9CA3AF" stroke-width="3" stroke-dasharray="6,6" />
-            <path d="M 778,0 L 778,25 L 630,25 L 630,50" fill="none" stroke="#9CA3AF" stroke-width="3" stroke-dasharray="6,6" />
-            <path d="M 778,0 L 778,25 L 890,25 L 890,50" fill="none" stroke="#9CA3AF" stroke-width="3" stroke-dasharray="6,6" />
-        </svg>
+def _svg_bridge_semi_to_qf(qf1_won: bool = False, qf2_won: bool = False, qf3_won: bool = False, qf4_won: bool = False) -> str:
+    """
+    SVG connectors dropping from Semis to Quarterfinals, stretched to touch cards.
+    """
+    q1_cls = "winner-path" if qf1_won else ""
+    q2_cls = "winner-path" if qf2_won else ""
+    q3_cls = "winner-path" if qf3_won else ""
+    q4_cls = "winner-path" if qf4_won else ""
+
+    return f"""
+    <div class="bracket-bridge">
+    <svg viewBox="0 0 1000 100" preserveAspectRatio="none" style="width: 100%; height: 100px; overflow: visible;">
+        <path class="connector-line {q1_cls}" d="M 228,0 L 228,50 L 109,50 L 109,100" fill="none" stroke="#263238" stroke-width="3" />
+        <path class="connector-line {q2_cls}" d="M 228,0 L 228,50 L 348,50 L 348,100" fill="none" stroke="#263238" stroke-width="3" />
+        <path class="connector-line {q3_cls}" d="M 772,0 L 772,50 L 652,50 L 652,100" fill="none" stroke="#263238" stroke-width="3" />
+        <path class="connector-line {q4_cls}" d="M 772,0 L 772,50 L 891,50 L 891,100" fill="none" stroke="#263238" stroke-width="3" />
+    </svg>
     </div>
     """
 def render(
@@ -349,39 +326,34 @@ def render(
     unsafe_allow_html=True,
 )
         # ── 1. FINAL ROW ──
-        _, final_col, _ = st.columns([1.5, 6, 1.5])
+        _, final_col, _ = st.columns([1.55, 1.5, 1.55])
         with final_col:
-
-            st.markdown(
-                '<div class="bracket-stage">Final</div>',
-                unsafe_allow_html=True,
-            )
-
             if final_match:
                 render_match(final_match, "final")
 
             elif left_sf_winner and right_sf_winner:
-
                 render_placeholder(
-        f'{FLAGS.get(left_sf_winner,"🏳")} {left_sf_winner}',
-        f'{FLAGS.get(right_sf_winner,"🏳")} {right_sf_winner}',
-    )
+                    f'{FLAGS.get(left_sf_winner,"🏳")} {left_sf_winner}',
+                    f'{FLAGS.get(right_sf_winner,"🏳")} {right_sf_winner}',
+                    size="final"
+                )
             else:
-                render_placeholder("🏆 TBD")
-        st.markdown(_svg_bridge_final_to_semi(), unsafe_allow_html=True)
+                render_placeholder("🏆 TBD", size="final")
+        st.markdown(
+            _svg_bridge_final_to_semi(
+                sf1_won=bool(left_sf_winner), 
+                sf2_won=bool(right_sf_winner)
+            ), 
+            unsafe_allow_html=True
+        )
 
         st.markdown(
     '<div class="bracket-semi-row">',
     unsafe_allow_html=True,
 )
         # ── 2. SEMI FINALS ROW ──
-        sf_left_col, spacer, sf_right_col = st.columns([1, 0.25, 1])
+        sf_left_col, _, sf_right_col = st.columns([2.1, 0.4, 2.1])
         with sf_left_col:
-
-            st.markdown(
-                '<div class="bracket-stage">Semi Finals</div>',
-                unsafe_allow_html=True,
-            )
             if left_semifinal:
                 render_match(left_semifinal, "semi")
 
@@ -396,11 +368,6 @@ def render(
 
                 render_placeholder("⚽ TBD")
         with sf_right_col:
-
-            st.markdown(
-                '<div class="bracket-stage">Semi Finals</div>',
-                unsafe_allow_html=True,
-            )
             if right_semifinal:
                 render_match(right_semifinal, "semi")
 
@@ -414,13 +381,21 @@ def render(
             else:
 
                 render_placeholder("⚽ TBD")
-        st.markdown(_svg_bridge_semi_to_qf(), unsafe_allow_html=True)
+        st.markdown(
+            _svg_bridge_semi_to_qf(
+                qf1_won=bool(left_qf_winner),
+                qf2_won=bool(right_qf_winner),
+                qf3_won=bool(left_qf2_winner),
+                qf4_won=bool(right_qf2_winner)
+            ), 
+            unsafe_allow_html=True
+        )
 
         st.markdown(
     '<div class="bracket-quarter-row">',
     unsafe_allow_html=True,
 )
-        qf1, qf2, qf3, qf4 = st.columns(4)
+        qf1, _, qf2, _, qf3, _, qf4 = st.columns([1, 0.1, 1, 0.4, 1, 0.1, 1])
         with qf1:
 
             if len(quarterfinals) > 0:
@@ -454,14 +429,9 @@ def render(
                     "quarter",
                 )
         st.markdown(
-    "<div style='height:50px'></div>",
-    unsafe_allow_html=True,
-)
-        st.markdown(
     "</div>",
     unsafe_allow_html=True,
 )
-        st.markdown("<div style='height:60px'></div>", unsafe_allow_html=True)
         st.markdown(
     '<div class="bracket-third-row">',
     unsafe_allow_html=True,
