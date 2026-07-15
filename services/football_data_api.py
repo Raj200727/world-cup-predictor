@@ -14,11 +14,16 @@ except ImportError:
 BASE_URL = "https://api.football-data.org/v4"
 
 def get_api_key():
-    # 2. Priority: Streamlit Cloud Secrets (Production)
-    if "FOOTBALL_DATA_API_KEY" in st.secrets:
-        return st.secrets["FOOTBALL_DATA_API_KEY"]
+    # 1. Try Streamlit Cloud Production Secrets first
+    try:
+        if "FOOTBALL_DATA_API_KEY" in st.secrets:
+            return st.secrets["FOOTBALL_DATA_API_KEY"]
+    except Exception:
+        # If st.secrets crashes (like in GitHub Actions where no file exists), 
+        # just ignore it and fall back to os.getenv
+        pass
     
-    # 3. Fallback: Local Environment Variable (Development)
+    # 2. Fall back to local environment variables
     return os.getenv("FOOTBALL_DATA_API_KEY")
 
 API_KEY = get_api_key()
@@ -45,32 +50,28 @@ def get_match(match_id: int) -> dict:
     """
     Returns a single match.
     """
-
-    response = session.get(
-        f"{BASE_URL}/matches/{match_id}",
-        timeout=20,
-    )
-
-    response.raise_for_status()
-
-    return response.json()
+    try:
+        response = session.get(
+            f"{BASE_URL}/matches/{match_id}",
+            timeout=20,
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        st.error(f"Error fetching match {match_id}: {e}")
+        return {} # Return empty dict instead of crashing
 
 def get_team(team_id: int) -> dict:
     """
     Returns team information.
     """
-
-    response = session.get(
-        f"{BASE_URL}/teams/{team_id}",
-        timeout=20,
-    )
-
-    response.raise_for_status()
-
-    return response.json()
-
-if __name__ == "__main__":
-
-    matches = get_world_cup_matches()
-
-    print(f"Loaded {len(matches)} matches.")
+    try:
+        response = session.get(
+            f"{BASE_URL}/teams/{team_id}",
+            timeout=20,
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        st.error(f"Error fetching team {team_id}: {e}")
+        return {} # Return empty dict instead of crashing
