@@ -15,10 +15,14 @@ BASE_URL = "https://api.football-data.org/v4"
 
 def get_api_key():
     # 1. Try Streamlit Cloud Production Secrets first
-    if "FOOTBALL_DATA_API_KEY" in st.secrets:
-        return st.secrets["FOOTBALL_DATA_API_KEY"]
+    try:
+        if "FOOTBALL_DATA_API_KEY" in st.secrets:
+            return st.secrets["FOOTBALL_DATA_API_KEY"]
+    except Exception:
+        # If st.secrets crashes (like in GitHub Actions where no file exists), ignore it
+        pass
     
-    # 2. Fall back to local environment variables
+    # 2. Fall back to local environment variables (for local dev and GitHub Actions)
     return os.getenv("FOOTBALL_DATA_API_KEY")
 
 API_KEY = get_api_key()
