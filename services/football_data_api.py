@@ -1,28 +1,35 @@
-"""
-football_data_api.py
-
-Wrapper around the Football Data API.
-"""
-
 from __future__ import annotations
 
 import os
 import requests
+import streamlit as st
 
-from dotenv import load_dotenv
-
-load_dotenv()
+# Try to load local .env file (for local development)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 BASE_URL = "https://api.football-data.org/v4"
 
-API_KEY = os.getenv("FOOTBALL_DATA_API_KEY")
+def get_api_key():
+    # 1. Try Streamlit Cloud Production Secrets first
+    if "FOOTBALL_DATA_API_KEY" in st.secrets:
+        return st.secrets["FOOTBALL_DATA_API_KEY"]
+    
+    # 2. Fall back to local environment variables
+    return os.getenv("FOOTBALL_DATA_API_KEY")
+
+API_KEY = get_api_key()
 
 HEADERS = {
     "X-Auth-Token": API_KEY
 }
 
 session = requests.Session()
-session.headers.update(HEADERS)
+if API_KEY:
+    session.headers.update(HEADERS)
 
 def get_world_cup_matches() -> list[dict]:
     """
