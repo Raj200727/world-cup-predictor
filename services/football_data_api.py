@@ -4,7 +4,7 @@ import os
 import requests
 import streamlit as st
 
-# Try to load local .env file (for local development)
+# 1. Attempt to load local environment variables (for your laptop)
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -14,45 +14,31 @@ except ImportError:
 BASE_URL = "https://api.football-data.org/v4"
 
 def get_api_key():
-    # 1. Try Streamlit Cloud Production Secrets first
-    try:
-        if "FOOTBALL_DATA_API_KEY" in st.secrets:
-            return st.secrets["FOOTBALL_DATA_API_KEY"]
-    except Exception:
-        # If st.secrets crashes (like in GitHub Actions where no file exists), ignore it
-        pass
+    # 2. Priority: Streamlit Cloud Secrets (Production)
+    if "FOOTBALL_DATA_API_KEY" in st.secrets:
+        return st.secrets["FOOTBALL_DATA_API_KEY"]
     
-    # 2. Fall back to local environment variables (for local dev and GitHub Actions)
+    # 3. Fallback: Local Environment Variable (Development)
     return os.getenv("FOOTBALL_DATA_API_KEY")
 
 API_KEY = get_api_key()
 
-HEADERS = {
-    "X-Auth-Token": API_KEY
-}
-
+# 4. Create session only if key exists, otherwise let it fail gracefully later
 session = requests.Session()
 if API_KEY:
-    session.headers.update(HEADERS)
+    session.headers.update({"X-Auth-Token": API_KEY})
 
 def get_world_cup_matches() -> list[dict]:
-    """
-    Returns every FIFA World Cup match.
-    """
+    if not API_KEY:
+        st.warning("API Key not found. Please check Streamlit Secrets.")
+        return []
+
     try:
-        response = session.get(
-            f"{BASE_URL}/competitions/WC/matches",
-            timeout=10,
-        )
+        response = session.get(f"{BASE_URL}/competitions/WC/matches", timeout=10)
         response.raise_for_status()
-        data = response.json()
-        return data["matches"]
-        
+        return response.json().get("matches", [])
     except Exception as e:
-        # Instead of crashing the whole app, show a nice error in the UI
-        # and return an empty list so the rest of the app can still load.
-        st.error(f"API Connection Failed: {e}")
-        st.info("Check your Streamlit Secrets and ensure the API key is active.")
+        st.error(f"API Error: {e}")
         return []
 
 def get_match(match_id: int) -> dict:
