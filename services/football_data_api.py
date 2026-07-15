@@ -34,16 +34,25 @@ if API_KEY:
     session.headers.update({"X-Auth-Token": API_KEY})
 
 def get_world_cup_matches() -> list[dict]:
-    if not API_KEY:
-        st.warning("API Key not found. Please check Streamlit Secrets.")
+    # 1. Get the key safely
+    api_key = st.secrets.get("FOOTBALL_DATA_API_KEY") or os.getenv("FOOTBALL_DATA_API_KEY")
+    
+    if not api_key:
+        st.error("API Key missing! Check Streamlit Secrets.")
         return []
 
+    # 2. Make the request with the key
     try:
-        response = session.get(f"{BASE_URL}/competitions/WC/matches", timeout=10)
-        response.raise_for_status()
+        response = requests.get(
+            f"{BASE_URL}/competitions/WC/matches",
+            headers={"X-Auth-Token": api_key},
+            timeout=10
+        )
+        response.raise_for_status() # This is where it currently crashes
         return response.json().get("matches", [])
     except Exception as e:
-        st.error(f"API Error: {e}")
+        # 3. Fail gracefully
+        st.error(f"API Connection Failed: {e}")
         return []
 
 def get_match(match_id: int) -> dict:
