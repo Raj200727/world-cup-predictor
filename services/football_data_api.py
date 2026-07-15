@@ -39,17 +39,21 @@ def get_world_cup_matches() -> list[dict]:
     """
     Returns every FIFA World Cup match.
     """
-
-    response = session.get(
-        f"{BASE_URL}/competitions/WC/matches",
-        timeout=20,
-    )
-
-    response.raise_for_status()
-
-    data = response.json()
-
-    return data["matches"]
+    try:
+        response = session.get(
+            f"{BASE_URL}/competitions/WC/matches",
+            timeout=10,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["matches"]
+        
+    except Exception as e:
+        # Instead of crashing the whole app, show a nice error in the UI
+        # and return an empty list so the rest of the app can still load.
+        st.error(f"API Connection Failed: {e}")
+        st.info("Check your Streamlit Secrets and ensure the API key is active.")
+        return []
 
 def get_match(match_id: int) -> dict:
     """

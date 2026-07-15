@@ -68,7 +68,7 @@ if "selected_match_id" not in st.session_state:
 def main():
 
     
-
+    st.write(f"Secret detected: {st.secrets.get('FOOTBALL_DATA_API_KEY') is not None}")
     # ------------------------------------------------------------------
     # Hero
     # ------------------------------------------------------------------
