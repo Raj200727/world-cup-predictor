@@ -498,16 +498,6 @@ def inject_css():
     margin-bottom: 2rem;
     letter-spacing: -.4px;
 }}
-
-.bracket-card {{
-    background: linear-gradient(145deg, #0d1a13 0%, #0a140f 100%); /* Deep forest green */
-        border: 1px solid #182e22;
-        border-radius: 12px;
-        padding: 12px;
-        color: #e2e8f0;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-        transition: all 0.2s ease-in-out;
-}}
 /* ── SVG Connector Bridges ───────────────────── */
 
 /* Each bracket row must be position:relative so the absolute
@@ -536,40 +526,21 @@ def inject_css():
 }}
 
 /* Cards must float above the SVG lines */
-.bracket-card {{
-    position: relative;
-    z-index: 2;
-}}
 
 /* SVG path styling */
-.connector-path {{
-    fill: none;
-    stroke: {CLR_BORDER};
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    opacity: 0.7;
-    transition: stroke 0.3s ease, opacity 0.3s ease;
-}}
 
-/* Accent connector — Final to Semi lines get the accent color */
-.connector-path.accent {{
-    stroke: {CLR_ACCENT};
-    opacity: 0.35;
-    stroke-width: 2.5;
-}}
 .bracket-quarter{{
-    max-width: 330px;
+    max-width: 340px;
     margin: 0 auto;
 }}
 
 .bracket-semi{{
-    max-width: 500px;
+    max-width: 520px;
     margin: 0 auto;
 }}
 
 .bracket-final{{
-    max-width: 720px;
+    max-width: 760px;
     margin: 0 auto 80px auto;
 }}
 
@@ -578,15 +549,15 @@ def inject_css():
     margin: 0 auto;
 }}
 .bracket-final-row{{
-    margin-bottom:90px;
+    margin-bottom:70px;
 }}
 
 .bracket-semi-row{{
-    margin-bottom:90px;
+    margin-bottom:70px;
 }}
 
 .bracket-quarter-row{{
-    margin-bottom:110px;
+    margin-bottom:90px;
 }}
 
 .bracket-third-row{{
@@ -772,11 +743,6 @@ def inject_css():
 /* ──────────────────────────────────────────────
        Phase 2G: Dynamic SVG Connectors (Flawless Scaling)
     ────────────────────────────────────────────── */
-.bracket-bridge {{
-        margin: -15px 0; /* Pulls rows tightly together */
-        position: relative;
-        z-index: 1;
-}}
     
 .connector-line {{
         transition: stroke 0.3s ease, filter 0.3s ease;
@@ -813,6 +779,22 @@ def inject_css():
         font-size: 0.85rem; /* Larger top badge */
         margin-bottom: 12px;
     }}
+    .team-flag{{
+    width:30px;
+    height:22px;
+
+    object-fit:cover;
+
+    border-radius:3px;
+
+    margin-right:10px;
+
+    flex-shrink:0;
+
+    display:inline-block;
+
+    vertical-align:middle;
+}}
 /*Prediction section
 */
 .prediction-header{{

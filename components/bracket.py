@@ -10,6 +10,7 @@ import streamlit as st
 from datetime import datetime
 from components.clickable_card import set_selected_match
 from assets.flags import FLAGS
+from assets.flag_loader import load_svg
 
 def render_match(
     match: dict,
@@ -40,8 +41,13 @@ def render_match(
         )
     home_score = match.get("home_score")
     away_score = match.get("away_score")
-    home_flag = FLAGS.get(match["home_team_name"], "🏳")
-    away_flag = FLAGS.get(match["away_team_name"], "🏳")
+    home_flag = load_svg(
+    FLAGS.get(match["home_team_name"])
+    )
+
+    away_flag = load_svg(
+        FLAGS.get(match["away_team_name"])
+    )
 
     if played:
 
@@ -76,7 +82,7 @@ def render_match(
 
         home_display = f"""
     <div class="bracket-team-name">
-        <span class="bracket-flag">{home_flag}</span>
+        <img class="team-flag" src="{home_flag}">
         <span>{match['home_team_name']}</span>
     </div>
 
@@ -85,7 +91,7 @@ def render_match(
 
         away_display = f"""
     <div class="bracket-team-name">
-        <span class="bracket-flag">{away_flag}</span>
+        <img class="team-flag" src="{away_flag}">
         <span>{match['away_team_name']}</span>
     </div>
 
@@ -96,14 +102,14 @@ def render_match(
 
         home_display = f"""
     <div class="bracket-team-name">
-        <span class="bracket-flag">{home_flag}</span>
+        <img class="team-flag" src="{home_flag}">
         <span>{match['home_team_name']}</span>
     </div>
     """
 
         away_display = f"""
     <div class="bracket-team-name">
-        <span class="bracket-flag">{away_flag}</span>
+        <img class="team-flag" src="{away_flag}">
         <span>{match['away_team_name']}</span>
     </div>
     """
@@ -190,6 +196,8 @@ def get_winner(match: dict) -> str | None:
 
     if away > home:
         return match["away_team_name"]
+    
+    return None
 
 def _svg_bridge_final_to_semi(sf1_won: bool = False, sf2_won: bool = False) -> str:
     """
@@ -346,6 +354,10 @@ def render(
             ), 
             unsafe_allow_html=True
         )
+        st.markdown(
+    "</div>",
+    unsafe_allow_html=True,
+)
 
         st.markdown(
     '<div class="bracket-semi-row">',
@@ -390,6 +402,10 @@ def render(
             ), 
             unsafe_allow_html=True
         )
+        st.markdown(
+    "</div>",
+    unsafe_allow_html=True,
+)
 
         st.markdown(
     '<div class="bracket-quarter-row">',
