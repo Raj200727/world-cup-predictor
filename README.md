@@ -4,7 +4,9 @@
 ![SQLite](https://img.shields.io/badge/SQLite-Database-green)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 ![Tests](https://github.com/Raj200727/world-cup-predictor/actions/workflows/test.yml/badge.svg)
+# ⚽ FIFA World Cup 2026 Predictor & Bracket Engine
 
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_svg.svg)](YOUR_DEPLOYED_APP_URL_HERE)
 A production-style football analytics platform for predicting FIFA World Cup matches using a hybrid statistical engine that combines historical World Cup performance, recent international form, competition weighting, exponential recency decay, and Poisson goal simulation.
 
 The prediction engine ingests more than **39,000 international matches**, applies competition-specific weighting, exponential recency decay, blends historical World Cup performance with recent international form, and generates match probabilities using a Poisson goal model.
@@ -273,29 +275,68 @@ world-cup-predictor/
 ```
 ## System Architecture
 
-```text
-results.csv
-      │
-      ▼
- ingest_form.py
-      │
-      ▼
- predictor.db
+The application is split into four discrete layers. Each layer has a single responsibility and communicates through well-defined interfaces — the data pipeline never touches the UI, and the math engine never touches the database directly.
 
-fixtures_2026.csv
-      │
-      ▼
- ingest_fixtures.py
-      │
-      ▼
- predictor.db
-      │
-      ▼
- math_engine.py
-      │
-      ▼
- Streamlit Dashboard
 ```
+┌─────────────────────────────────────────────────────────┐
+│                     DATA LAYER                          │
+│                                                         │
+│  Kaggle CSVs          Football-Data API                 │
+│  (1930–2022)          (live fixtures)                   │
+│       │                      │                          │
+│       ▼                      ▼                          │
+│  ingest_form.py       ingest_api.py                     │
+│  ingest_fixtures.py                                     │
+│       │                      │                          │
+│       └──────────┬───────────┘                          │
+│                  ▼                                      │
+│            predictor.db  (SQLite)                       │
+└──────────────────┬──────────────────────────────────────┘
+                   │
+┌──────────────────▼──────────────────────────────────────┐
+│                  MATH ENGINE                            │
+│                                                         │
+│  math_engine.py                                         │
+│                                                         │
+│  Historical ratings  ──┐                                │
+│  Competition weights   ├──► Hybrid Rating               │
+│  Recency decay       ──┘         │                      │
+│                                  ▼                      │
+│                     λ_home / λ_away  (Expected Goals)   │
+│                                  │                      │
+│                                  ▼                      │
+│                     Poisson Simulation                  │
+│                     Win / Draw / Loss                   │
+│                     Scoreline Matrix                    │
+└──────────────────┬──────────────────────────────────────┘
+                   │
+┌──────────────────▼──────────────────────────────────────┐
+│                SERVICE LAYER                            │
+│                                                         │
+│  prediction_service.py    fixture_service.py            │
+│  analytics_rating_service.py  team_service.py           │
+│  bracket_service.py       xg_service.py                 │
+│  tournament_rating_service.py                           │
+└──────────────────┬──────────────────────────────────────┘
+                   │
+┌──────────────────▼──────────────────────────────────────┐
+│                PRESENTATION LAYER                       │
+│                                                         │
+│  app.py  (Streamlit entry point)                        │
+│                                                         │
+│  components/          assets/                           │
+│  ├── bracket.py       ├── css.py   (design system)      │
+│  ├── charts.py        ├── theme.py                      │
+│  ├── match_card.py    └── flags/                        │
+│  ├── prediction_breakdown.py                            │
+│  └── team_card.py                                       │
+│                                                         │
+│  Custom CSS Grid  +  Dynamic SVG bracket connectors     │
+└─────────────────────────────────────────────────────────┘
+```
+
+Data flows strictly downward. The math engine is stateless and functional — every service imports it as a pure computation layer, making it independently testable and reusable across backtesting and live prediction without modification.
+
 ---
 
 ## Setup
@@ -349,6 +390,20 @@ python backtest.py --test-season 2018
 
 ---
 
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **Frontend** | Streamlit, Custom CSS design system, Dynamic SVG generation |
+| **Backend** | Python 3.13, SQLite3 |
+| **Data pipelines** | Football-Data.org API (automated ingestion), Kaggle historical CSVs |
+| **Math / Statistics** | Poisson goal model, Exponential recency decay, Competition-weighted ratings |
+| **Backtesting** | Custom out-of-sample validation framework |
+| **Deployment** | Streamlit Community Cloud |
+| **CI** | GitHub Actions (`test.yml`) |
+
+---
+
 ## Requirements
 ```
 Python 3.13+
@@ -395,7 +450,24 @@ sqlalchemy>=2.0.0
 - [x] Statistical backtesting
 - [x] Eastern Time fixture conversion
 - [x] Interactive Streamlit dashboard
+
 ---
+
+# Version 3 (Completed)
+
+- [x] Interactive knockout bracket
+- [x] Automatic bracket progression
+- [x] Dynamic SVG connector lines
+- [x] Click-to-predict match selection
+- [x] Winner highlighting across bracket
+- [x] Custom CSS design system with variables
+- [x] Flag rendering across all bracket cards
+- [x] Third place match support
+- [x] Modular service layer architecture
+- [x] GitHub Actions CI pipeline
+
+---
+
 # Version History
 
 ## Version 1
@@ -415,11 +487,22 @@ sqlalchemy>=2.0.0
 - Interactive analytics
 - Automated backtesting
 - Eastern Time conversion
----
-# Version 3 Roadmap
 
-- Interactive knockout bracket
+## Version 3
+
+- Interactive SVG knockout bracket
+- Click-to-predict match selection
 - Automatic bracket progression
+- Winner path highlighting
+- Custom CSS design system
+- Flag rendering
+- Modular service architecture
+- CI pipeline
+
+---
+
+# Version 4 Roadmap
+
 - Monte Carlo tournament simulation
 - Elo integration
 - Bayesian rating system
@@ -432,20 +515,107 @@ sqlalchemy>=2.0.0
 - Injury impact modelling
 - Live World Cup result ingestion
 - Rolling multi-World Cup validation
+
 ---
+
 # Future Improvements
 
 Planned enhancements include:
 
-- Live fixture synchronization
-- Automatic tournament progression
-- Dynamic bracket visualization
-- Interactive team comparison
-- Prediction calibration dashboard
 - Monte Carlo tournament simulations
 - Elo + Poisson ensemble model
 - Bayesian strength updates
+- Dixon-Coles draw correction
 - Advanced expected goals modelling
+- Prediction calibration dashboard
+- Live fixture synchronization
+- Squad valuation and injury modelling
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/Raj200727/world-cup-predictor.git
+cd world-cup-predictor
+```
+
+### 2. Create and activate a virtual environment
+
+```bash
+python -m venv .venv
+
+# macOS / Linux
+source .venv/bin/activate
+
+# Windows
+.venv\Scripts\activate
+```
+
+### 3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Configure your API key
+
+Create the Streamlit secrets file:
+
+```bash
+mkdir -p .streamlit
+touch .streamlit/secrets.toml
+```
+
+Add your key:
+
+```toml
+# .streamlit/secrets.toml
+API_KEY = "your_football_data_api_key_here"
+```
+
+> The `.streamlit/` directory is already listed in `.gitignore`. Never commit this file.
+
+### 5. Ingest historical and fixture data
+
+```bash
+# Load 39,000+ historical international results
+python ingest_form.py
+
+# Load 2026 World Cup fixture schedule
+python ingest_fixtures.py
+
+# (Optional) Pull live results from the Football-Data API
+python ingest_api.py
+```
+
+This populates `predictor.db`. You only need to run the ingestion scripts once unless the source data changes.
+
+### 6. Run the application
+
+```bash
+streamlit run app.py
+```
+
+The dashboard will open at `http://localhost:8501`.
+
+### Updating fixtures as the tournament progresses
+
+When a new knockout round begins, run:
+
+```bash
+python ingest_fixtures.py
+```
+
+The application reads directly from the database — no code changes required.
+
+### Running the backtest
+
+```bash
+# Default: train on 1930–2018, evaluate on WC 2022
+python backtest.py
+
+# Custom test season
+python backtest.py --test-season 2018
+```
 
 ## Portfolio notes
 
@@ -466,7 +636,6 @@ If you're sharing this as a portfolio project, the things worth highlighting are
 - **WC 1930–2018 match results:** [evangower/fifa-world-cup](https://www.kaggle.com/datasets/evangower/fifa-world-cup) on Kaggle
 - **WC 2022 match results:** [swaptr/fifa-world-cup-2022-match-data](https://www.kaggle.com/datasets/swaptr/fifa-world-cup-2022-match-data) on Kaggle
 - **WC 2026 fixture schedule:** [football-data.org](https://www.football-data.org/) free tier API
-
 ---
 
 ## License

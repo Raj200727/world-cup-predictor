@@ -124,7 +124,7 @@ def main():
     # ------------------------------------------------------------------
     # Prediction Summary
     # ------------------------------------------------------------------
-
+    st.markdown("<div id='prediction-section'></div>", unsafe_allow_html=True)
     prediction_breakdown.render(result)
 
     # ------------------------------------------------------------------

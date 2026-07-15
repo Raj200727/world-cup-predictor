@@ -477,9 +477,9 @@ def render(
                 )
 
             else:
-
-                render_placeholder("🥉 TBD")
+                render_placeholder("TBD", "TBD", "third")
         st.markdown(
             "</div>",
             unsafe_allow_html=True,
         )
+
