@@ -5,3 +5,4 @@ scikit-learn
 sqlalchemy
 plotly
 pytest
+python-dotenv
