@@ -1262,18 +1262,14 @@ def expected_goals(
     λ_away = historical_lambda_away
 
     if home_live is None:
-        home_live = {
-            "attack": 0.50,
-            "defense": 0.50,
-            "form": 0.50,
-        }
-
+            home_live = {}
     if away_live is None:
-        away_live = {
-            "attack": 0.50,
-            "defense": 0.50,
-            "form": 0.50,
-        }
+            away_live = {}
+
+        # Safely inject default values for any missing keys
+    for key in ["attack", "defense", "form"]:
+        home_live.setdefault(key, 0.50)
+        away_live.setdefault(key, 0.50)
 
     home_attack_factor = 1.0 + (
         (home_live["attack"] - 0.50) * 0.12
