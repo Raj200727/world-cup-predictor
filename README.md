@@ -6,7 +6,7 @@
 ![Tests](https://github.com/Raj200727/world-cup-predictor/actions/workflows/test.yml/badge.svg)
 # ⚽ FIFA World Cup 2026 Predictor & Bracket Engine
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_svg.svg)](YOUR_DEPLOYED_APP_URL_HERE)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_svg.svg)](https://world-cup-predictor-2o26.streamlit.app/)
 A production-style football analytics platform for predicting FIFA World Cup matches using a hybrid statistical engine that combines historical World Cup performance, recent international form, competition weighting, exponential recency decay, and Poisson goal simulation.
 
 The prediction engine ingests more than **39,000 international matches**, applies competition-specific weighting, exponential recency decay, blends historical World Cup performance with recent international form, and generates match probabilities using a Poisson goal model.
