@@ -13,3 +13,5 @@ __pycache__/
 
 # Environment variables / API Keys
 .env
+
+.streamlit/
