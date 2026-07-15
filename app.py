@@ -68,7 +68,18 @@ if "selected_match_id" not in st.session_state:
 def main():
 
     
-    st.write(f"Secret detected: {st.secrets.get('FOOTBALL_DATA_API_KEY') is not None}")
+    st.write("--- DEPLOYMENT DEBUG ---")
+    secrets_keys = list(st.secrets.keys())
+    st.write(f"Secrets found: {secrets_keys}")
+    
+    # Check if our specific key is there
+    key_exists = "FOOTBALL_DATA_API_KEY" in st.secrets
+    st.write(f"FOOTBALL_DATA_API_KEY exists: {key_exists}")
+    
+    if key_exists:
+        key = st.secrets["FOOTBALL_DATA_API_KEY"]
+        st.write(f"Key length: {len(key)}")
+        st.write(f"Key preview: {key[:4]}****") # Only show first 4 chars
     # ------------------------------------------------------------------
     # Hero
     # ------------------------------------------------------------------
